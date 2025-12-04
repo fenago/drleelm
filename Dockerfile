@@ -11,7 +11,8 @@ COPY package*.json ./
 COPY backend/tsconfig.json ./backend/
 
 # Install all dependencies (including devDependencies for build)
-RUN npm ci
+# Using --legacy-peer-deps to resolve @langchain/community peer dependency conflicts
+RUN npm ci --legacy-peer-deps
 
 # Copy source code
 COPY backend/ ./backend/
@@ -32,7 +33,8 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production && \
+# Using --legacy-peer-deps to resolve @langchain/community peer dependency conflicts
+RUN npm ci --only=production --legacy-peer-deps && \
     npm cache clean --force
 
 # Copy built files from builder stage
