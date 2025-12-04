@@ -16,7 +16,9 @@ export async function mkChat(t: string) {
 }
 
 export async function getChat(id: string) {
+  console.log(`[getChat] Looking up chat:${id}`);
   const a = await db.get(`chat:${id}`);
+  console.log(`[getChat] Result for chat:${id}:`, a ? 'FOUND' : 'NOT FOUND', a);
   return a;
 }
 
@@ -33,9 +35,11 @@ export async function addMsg(id: string, m: ChatMsg) {
 
 export async function listChats(n = 50) {
   const idx = ((await db.get("chat:index")) as string[]) || [];
+  console.log(`[listChats] Index has ${idx.length} entries:`, idx.slice(0, 5));
   const out: ChatMeta[] = [];
   for (const id of idx.slice(0, n)) {
     const c = (await db.get(`chat:${id}`)) as ChatMeta | undefined;
+    console.log(`[listChats] Lookup chat:${id}:`, c ? 'FOUND' : 'NOT FOUND');
     if (c) out.push(c);
   }
   return out.sort((x, y) => y.at - x.at);
