@@ -1,10 +1,9 @@
 import cors from 'cors';
-import path from 'path'
 import server from '../utils/server/server'
 import { registerRoutes } from './router'
 import { loggerMiddleware } from './middleware'
-
-process.loadEnvFile(path.resolve(process.cwd(), '.env'))
+// Import config to ensure env vars are loaded (handles both dev and production)
+import { config } from '../config/env'
 
 const app = server()
 
@@ -20,6 +19,6 @@ app.use(app.serverStatic("/storage", "./storage"))
 
 registerRoutes(app)
 
-app.listen(Number.parseInt(process.env.PORT || '5000'), () => {
-  console.log(`[DrLeeLM] running on ${process.env.VITE_BACKEND_URL}`)
+app.listen(config.port, () => {
+  console.log(`[DrLeeLM] running on ${config.baseUrl}`)
 })
