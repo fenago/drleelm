@@ -1,6 +1,12 @@
 import path from 'path'
+import fs from 'fs'
 
-process.loadEnvFile(path.resolve(process.cwd(), '.env'))
+// Only load .env file if it exists (for local development)
+// In production (DO App Platform, etc.), env vars are injected directly
+const envPath = path.resolve(process.cwd(), '.env')
+if (fs.existsSync(envPath)) {
+  process.loadEnvFile(envPath)
+}
 
 export const config = {
   db_mode: process.env.db_mode || 'json',
