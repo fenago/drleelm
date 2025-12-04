@@ -40,8 +40,8 @@ RUN npm ci --only=production --legacy-peer-deps && \
 # Copy built files from builder stage
 COPY --from=builder /app/backend/dist ./backend/dist
 
-# Create data directories
-RUN mkdir -p data/chats data/notes data/audio && \
+# Create data directories (storage for SQLite DB, cache, and data files)
+RUN mkdir -p storage data/chats data/notes data/audio && \
     chown -R nodejs:nodejs /app
 
 # Switch to non-root user
