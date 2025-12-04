@@ -19,6 +19,11 @@ app.use(app.serverStatic("/storage", "./storage"))
 
 registerRoutes(app)
 
+// Health check endpoint for Docker/DO App Platform
+app.get("/health", (_: any, res: any) => {
+  res.send({ status: "ok", timestamp: new Date().toISOString() })
+})
+
 app.listen(config.port, () => {
   console.log(`[DrLeeLM] running on ${config.baseUrl}`)
 })
