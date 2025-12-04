@@ -7,11 +7,30 @@ export type ChatMsg = { role: "user" | "assistant"; content: any; at: number };
 export async function mkChat(t: string) {
   const id = randomUUID();
   const c: ChatMeta = { id, title: t.slice(0, 60), at: Date.now() };
-  await db.set(`chat:${id}`, c);
-  await db.set(`msgs:${id}`, [] as ChatMsg[]);
-  const idx = ((await db.get("chat:index")) as string[]) || [];
-  idx.unshift(id);
-  await db.set("chat:index", idx.slice(0, 1000));
+  console.log(`[mkChat] Creating chat ${id}`);
+
+  try {
+    await db.set(`chat:${id}`, c);
+    console.log(`[mkChat] Saved chat:${id}`);
+
+    await db.set(`msgs:${id}`, [] as ChatMsg[]);
+    console.log(`[mkChat] Saved msgs:${id}`);
+
+    const idx = ((await db.get("chat:index")) as string[]) || [];
+    console.log(`[mkChat] Current index length: ${idx.length}`);
+
+    idx.unshift(id);
+    await db.set("chat:index", idx.slice(0, 1000));
+    console.log(`[mkChat] Updated index, new length: ${idx.length}`);
+
+    // Verify the index was saved
+    const verifyIdx = await db.get("chat:index") as string[];
+    console.log(`[mkChat] Verified index length: ${verifyIdx?.length}, first: ${verifyIdx?.[0]}`);
+  } catch (err) {
+    console.error(`[mkChat] ERROR:`, err);
+    throw err;
+  }
+
   return c;
 }
 
