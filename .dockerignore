@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build outputs (will be built in container)
+backend/dist/
+frontend/dist/
+
+# Storage (mounted as volume)
+storage/*
+data/*
+!storage/.gitkeep
+
+# Environment files (passed at runtime)
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# Development/Test
+test/
+*.test.ts
+*.spec.ts
+__tests__/
+
+# Docker files (not needed inside container)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Frontend (separate deployment)
+frontend/
+
+# Documentation
+research/
+docs/
+*.md
+!README.md
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
