@@ -56,5 +56,27 @@ app.get("/api/version", (_: any, res: any) => {
 })
 
 app.listen(config.port, () => {
-  console.log(`[DrLeeLM] running on ${config.baseUrl}`)
+  console.log(`\n========================================`)
+  console.log(`[DrLeeLM] Backend v${BACKEND_VERSION}`)
+  console.log(`========================================`)
+  console.log(`URL: ${config.baseUrl}`)
+  console.log(`LLM Provider: ${config.provider}`)
+  console.log(`LLM Model: ${
+    config.provider === 'gemini' ? config.gemini_model :
+    config.provider === 'openai' ? config.openai_model :
+    config.provider === 'claude' ? config.claude_model :
+    config.provider === 'grok' ? config.grok_model :
+    config.provider === 'openrouter' ? config.openrouter_model :
+    config.ollama.model
+  }`)
+  console.log(`Embeddings: ${config.embeddings_provider}`)
+  console.log(`API Key Set: ${
+    config.provider === 'gemini' ? (config.gemini ? 'YES' : 'NO') :
+    config.provider === 'openai' ? (config.openai ? 'YES' : 'NO') :
+    config.provider === 'claude' ? (config.claude ? 'YES' : 'NO') :
+    config.provider === 'grok' ? (config.grok ? 'YES' : 'NO') :
+    config.provider === 'openrouter' ? (config.openrouter ? 'YES' : 'NO') :
+    'N/A (Ollama)'
+  }`)
+  console.log(`========================================\n`)
 })

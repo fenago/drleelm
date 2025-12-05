@@ -167,6 +167,7 @@ export default function Chat() {
             m.role === "assistant" ? { ...m, content: normalizePayload((m as any).content).md } : m
           );
           setMessages(normalized);
+          setConnecting(false);
           for (let i = normalized.length - 1; i >= 0; i--) {
             const raw = (res.messages[i] as any)?.content;
             if (normalized[i].role === "assistant") {
@@ -178,12 +179,14 @@ export default function Chat() {
             }
           }
         } else {
-          // Chat not found - redirect to home
+          // Chat not found - clear URL and redirect to home
+          console.warn("[Chat] Chat not found, redirecting to home");
           navigate("/", { replace: true });
         }
       })
-      .catch(() => {
-        // Error loading chat (404, etc) - redirect to home
+      .catch((err) => {
+        // Error loading chat (404, etc) - clear URL and redirect to home
+        console.error("[Chat] Error loading chat:", err);
         navigate("/", { replace: true });
       });
   }, [chatId, navigate]);
@@ -353,6 +356,7 @@ export default function Chat() {
 
   // Track the number of user messages to detect when we get a new assistant response
   const lastUserMsgCountRef = useRef<number>(0);
+  const pollStartTimeRef = useRef<number>(0);
 
   // Poll for answer if WebSocket doesn't deliver it (handles race condition)
   const pollForAnswer = async (targetChatId: string, userMsgCount: number) => {
@@ -363,15 +367,28 @@ export default function Chat() {
     }
 
     lastUserMsgCountRef.current = userMsgCount;
+    pollStartTimeRef.current = Date.now();
     const pollInterval = 2000; // Poll every 2 seconds
-    const maxAttempts = 60; // Max 2 minutes of polling
-    let attempts = 0;
+    const maxWaitTime = 45000; // Max 45 seconds total (fail fast!)
+    let consecutiveErrors = 0;
 
     const doPoll = async () => {
       if (!awaitingAnswerRef.current) return; // Already got answer via WebSocket
 
+      const elapsed = Date.now() - pollStartTimeRef.current;
+
+      // Hard timeout - fail fast with clear error
+      if (elapsed > maxWaitTime) {
+        console.error("[pollForAnswer] Timeout after", elapsed, "ms");
+        setAwaitingAnswer(false);
+        setChatError("Response timed out after 45 seconds. The server may be overloaded or misconfigured. Please try again.");
+        return;
+      }
+
       try {
         const res = await getChatDetail(targetChatId);
+        consecutiveErrors = 0; // Reset error counter on success
+
         if (res?.ok && Array.isArray(res.messages)) {
           // Count user messages to see if we have a new assistant response
           const userMsgs = res.messages.filter((m: ChatMessage) => m.role === "user");
@@ -395,23 +412,32 @@ export default function Chat() {
               return;
             }
           }
+        } else if (!res?.ok) {
+          // Backend returned an error response
+          console.error("[pollForAnswer] Backend error:", res);
+          consecutiveErrors++;
         }
       } catch (e) {
-        console.error("[pollForAnswer] Error:", e);
+        console.error("[pollForAnswer] Network error:", e);
+        consecutiveErrors++;
       }
 
-      attempts++;
-      if (attempts < maxAttempts && awaitingAnswerRef.current) {
-        answerTimeoutRef.current = setTimeout(doPoll, pollInterval);
-      } else if (attempts >= maxAttempts && awaitingAnswerRef.current) {
-        // Give up after max attempts
+      // If we have 3+ consecutive errors, fail immediately
+      if (consecutiveErrors >= 3) {
+        console.error("[pollForAnswer] Too many consecutive errors, giving up");
         setAwaitingAnswer(false);
-        setChatError("Request timed out. Please try again.");
+        setChatError("Failed to get response from server. Please check your connection and try again.");
+        return;
+      }
+
+      // Continue polling
+      if (awaitingAnswerRef.current) {
+        answerTimeoutRef.current = setTimeout(doPoll, pollInterval);
       }
     };
 
     // Start polling faster if WebSocket isn't connected, otherwise give WS a chance
-    const initialDelay = wsConnectedRef.current ? 3000 : 1000;
+    const initialDelay = wsConnectedRef.current ? 2000 : 500;
     answerTimeoutRef.current = setTimeout(doPoll, initialDelay);
   };
 

@@ -124,6 +124,21 @@ export function chatRoutes(app: any) {
           const msg = err?.message || "failed";
           const stack = err?.stack || String(err);
           console.error("[chat] err inner", { chatId: id, msg, stack });
+
+          // CRITICAL: Save error as assistant message so polling can detect failures
+          // This prevents infinite spinner when WebSocket isn't connected
+          const errorContent = {
+            error: true,
+            message: msg,
+            answer: `**Error:** ${msg}\n\nPlease try again. If this persists, check the server configuration.`,
+            flashcards: []
+          };
+          await addMsg(id, {
+            role: "assistant",
+            content: errorContent,
+            at: Date.now(),
+          }).catch((e: any) => console.error("[chat] failed to save error msg", e));
+
           emitToAll(chatSockets.get(id), { type: "error", error: msg });
         }
       })().catch((e: any) => {
