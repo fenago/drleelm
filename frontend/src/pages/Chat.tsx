@@ -97,6 +97,7 @@ export default function Chat() {
   const [topic, setTopic] = useState<string>("");
   const [chatError, setChatError] = useState<string | null>(null);
   const [slowWarning, setSlowWarning] = useState(false);
+  const [chatVerified, setChatVerified] = useState(false);
   const { setDocument } = useCompanion();
   const elapsedSeconds = useElapsedTimer(awaitingAnswer);
 
@@ -168,6 +169,8 @@ export default function Chat() {
 
   useEffect(() => {
     if (!chatId) return;
+    // Reset verification when chatId changes to prevent WebSocket connecting before verification
+    setChatVerified(false);
     getChatDetail(chatId)
       .then((res) => {
         if (res?.ok && Array.isArray(res.messages)) {
@@ -176,6 +179,7 @@ export default function Chat() {
           );
           setMessages(normalized);
           setConnecting(false);
+          setChatVerified(true);
           for (let i = normalized.length - 1; i >= 0; i--) {
             const raw = (res.messages[i] as any)?.content;
             if (normalized[i].role === "assistant") {
@@ -202,7 +206,8 @@ export default function Chat() {
   const wsConnectedRef = useRef<boolean>(false);
 
   useEffect(() => {
-    if (!chatId) return;
+    // Only connect WebSocket after chat is verified to exist
+    if (!chatId || !chatVerified) return;
     wsConnectedRef.current = false;
     const wsUrl = (env.backend || window.location.origin).replace(/^http/, "ws") + `/ws/chat?chatId=${encodeURIComponent(chatId)}`;
     const ws = new WebSocket(wsUrl);
@@ -287,7 +292,7 @@ export default function Chat() {
         answerTimeoutRef.current = null;
       }
     };
-  }, [chatId]);
+  }, [chatId, chatVerified]);
 
   useEffect(() => {
     const onSel = () => {
