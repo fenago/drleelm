@@ -17,9 +17,18 @@ type SettingField = {
   min?: number
   max?: number
   step?: number
+  dynamicOptions?: boolean  // Flag to fetch options from API
+  optionsProvider?: string  // Provider name for fetching options
+  optionsType?: string      // 'chat' or 'embedding'
 }
 
 type CategorizedSettings = Record<string, SettingField[]>
+
+type ModelOption = {
+  id: string
+  name: string
+  description?: string
+}
 
 const categoryOrder = ['LLM', 'Gemini', 'OpenAI', 'Claude', 'Grok', 'OpenRouter', 'Ollama', 'Parameters', 'TTS', 'Transcription', 'System']
 const categoryDescriptions: Record<string, string> = {
@@ -36,6 +45,19 @@ const categoryDescriptions: Record<string, string> = {
   'System': 'System configuration options'
 }
 
+// Map setting keys to their provider and type for dynamic fetching
+const dynamicModelFields: Record<string, { provider: string; type?: string }> = {
+  'gemini_model': { provider: 'gemini', type: 'chat' },
+  'gemini_embed_model': { provider: 'gemini', type: 'embedding' },
+  'OPENAI_MODEL': { provider: 'openai', type: 'chat' },
+  'OPENAI_EMBED_MODEL': { provider: 'openai', type: 'embedding' },
+  'CLAUDE_MODEL': { provider: 'claude', type: 'chat' },
+  'GROK_MODEL': { provider: 'grok', type: 'chat' },
+  'openrouter_model': { provider: 'openrouter', type: 'chat' },
+  'OLLAMA_MODEL': { provider: 'ollama', type: 'chat' },
+  'OLLAMA_EMBED_MODEL': { provider: 'ollama', type: 'embedding' },
+}
+
 export default function Settings() {
   const [categories, setCategories] = useState<CategorizedSettings>({})
   const [loading, setLoading] = useState(true)
@@ -47,10 +69,30 @@ export default function Settings() {
     'LLM': true,
     'Gemini': true
   })
+  const [dynamicModels, setDynamicModels] = useState<Record<string, ModelOption[]>>({})
+  const [loadingModels, setLoadingModels] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     fetchSettings()
   }, [])
+
+  // Auto-fetch models for expanded categories on initial load
+  useEffect(() => {
+    if (Object.keys(categories).length === 0) return
+
+    // Fetch models for all expanded categories
+    Object.keys(expandedCategories).forEach(cat => {
+      if (expandedCategories[cat]) {
+        const fields = categories[cat] || []
+        fields.forEach(field => {
+          const config = dynamicModelFields[field.key]
+          if (config) {
+            fetchModelsForProvider(config.provider, config.type)
+          }
+        })
+      }
+    })
+  }, [categories]) // Run when categories are loaded
 
   const fetchSettings = async () => {
     try {
@@ -64,6 +106,79 @@ export default function Settings() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchModelsForProvider = async (provider: string, type?: string) => {
+    const cacheKey = `${provider}_${type || 'chat'}`
+    if (dynamicModels[cacheKey] || loadingModels[cacheKey]) return
+
+    setLoadingModels(prev => ({ ...prev, [cacheKey]: true }))
+    try {
+      const url = type
+        ? `${env.backend}/api/models/${provider}?type=${type}`
+        : `${env.backend}/api/models/${provider}`
+      const res = await fetch(url)
+      const data = await res.json()
+      if (data.success && data.models) {
+        setDynamicModels(prev => ({ ...prev, [cacheKey]: data.models }))
+      }
+    } catch (err) {
+      console.error(`Failed to fetch models for ${provider}:`, err)
+    } finally {
+      setLoadingModels(prev => ({ ...prev, [cacheKey]: false }))
+    }
+  }
+
+  const getOptionsForField = (field: SettingField, currentValue: string | number): string[] => {
+    const config = dynamicModelFields[field.key]
+    let options: string[] = []
+
+    if (config) {
+      const cacheKey = `${config.provider}_${config.type || 'chat'}`
+      const models = dynamicModels[cacheKey]
+      if (models && models.length > 0) {
+        options = models.map(m => m.id)
+      } else {
+        // Use static options as fallback
+        options = field.options || []
+      }
+    } else {
+      options = field.options || []
+    }
+
+    // Always ensure current value is in the options list
+    const currentStr = String(currentValue)
+    if (currentStr && !options.includes(currentStr)) {
+      options = [currentStr, ...options]
+    }
+
+    return options
+  }
+
+  const getModelDisplayName = (fieldKey: string, modelId: string): string => {
+    const config = dynamicModelFields[fieldKey]
+    if (config) {
+      const cacheKey = `${config.provider}_${config.type || 'chat'}`
+      const models = dynamicModels[cacheKey]
+      const model = models?.find(m => m.id === modelId)
+      if (model) {
+        return model.description ? `${model.name} (${model.description})` : model.name
+      }
+    }
+    return modelId
+  }
+
+  // Fetch models when a category is expanded
+  const handleCategoryExpand = (cat: string) => {
+    toggleCategory(cat)
+    // Trigger model fetch for relevant fields in this category
+    const fields = categories[cat] || []
+    fields.forEach(field => {
+      const config = dynamicModelFields[field.key]
+      if (config) {
+        fetchModelsForProvider(config.provider, config.type)
+      }
+    })
   }
 
   const handleChange = (key: string, value: string | number) => {
@@ -190,7 +305,7 @@ export default function Settings() {
             <div key={cat} className="rounded-2xl bg-stone-950 border border-stone-800 overflow-hidden">
               {/* Category Header */}
               <button
-                onClick={() => toggleCategory(cat)}
+                onClick={() => handleCategoryExpand(cat)}
                 className="w-full px-6 py-4 flex items-center justify-between hover:bg-stone-900/50 transition-colors"
               >
                 <div>
@@ -232,16 +347,25 @@ export default function Settings() {
                       </div>
                       <p className="text-xs text-stone-500 mb-2">{field.description}</p>
 
-                      {field.type === 'select' && field.options ? (
-                        <select
-                          value={String(getValue(field))}
-                          onChange={(e) => handleChange(field.key, e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-xl bg-stone-900 border border-stone-700 text-white focus:outline-none focus:border-sky-500 transition-colors"
-                        >
-                          {field.options.map(opt => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
+                      {field.type === 'select' && (field.options || dynamicModelFields[field.key]) ? (
+                        <div className="relative">
+                          <select
+                            value={String(getValue(field))}
+                            onChange={(e) => handleChange(field.key, e.target.value)}
+                            onFocus={() => {
+                              const config = dynamicModelFields[field.key]
+                              if (config) fetchModelsForProvider(config.provider, config.type)
+                            }}
+                            className="w-full px-4 py-2.5 rounded-xl bg-stone-900 border border-stone-700 text-white focus:outline-none focus:border-sky-500 transition-colors"
+                          >
+                            {getOptionsForField(field, getValue(field)).map(opt => (
+                              <option key={opt} value={opt}>{getModelDisplayName(field.key, opt)}</option>
+                            ))}
+                          </select>
+                          {loadingModels[`${dynamicModelFields[field.key]?.provider}_${dynamicModelFields[field.key]?.type || 'chat'}`] && (
+                            <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs text-stone-500">Loading...</span>
+                          )}
+                        </div>
                       ) : field.type === 'number' ? (
                         <input
                           type="number"

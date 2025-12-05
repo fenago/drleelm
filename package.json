@@ -1,6 +1,6 @@
 {
   "name": "drleelm",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "scripts": {
     "dev": "nodemon",
     "build": "tsc -p backend/tsconfig.json",

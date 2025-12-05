@@ -1,6 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { env } from "../config/env";
+
+// Custom hook for elapsed time tracking
+function useElapsedTimer(isRunning: boolean) {
+  const [elapsed, setElapsed] = useState(0);
+  const startTimeRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (isRunning) {
+      startTimeRef.current = Date.now();
+      setElapsed(0);
+      const interval = setInterval(() => {
+        if (startTimeRef.current) {
+          setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+        }
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      startTimeRef.current = null;
+    }
+  }, [isRunning]);
+
+  return elapsed;
+}
 import { chatJSON, getChatDetail, type FlashCard, createFlashcard, listFlashcards, deleteFlashcard, getChats, type ChatMessage, type SavedFlashcard, podcastStart } from "../lib/api";
 import MarkdownView from "../components/Chat/MarkdownView";
 import ActionRow from "../components/Chat/ActionRow";
@@ -73,6 +96,7 @@ export default function Chat() {
   const [awaitingAnswer, setAwaitingAnswer] = useState<boolean>(false);
   const [topic, setTopic] = useState<string>("");
   const { setDocument } = useCompanion();
+  const elapsedSeconds = useElapsedTimer(awaitingAnswer);
 
   const selPopupRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -145,10 +169,16 @@ export default function Chat() {
               break;
             }
           }
+        } else {
+          // Chat not found - redirect to home
+          navigate("/", { replace: true });
         }
       })
-      .catch(() => { });
-  }, [chatId]);
+      .catch(() => {
+        // Error loading chat (404, etc) - redirect to home
+        navigate("/", { replace: true });
+      });
+  }, [chatId, navigate]);
 
   useEffect(() => {
     if (!chatId) return;
@@ -321,7 +351,10 @@ export default function Chat() {
               })}
               {(connecting || awaitingAnswer) && (
                 <div className="w-full flex justify-start">
-                  <LoadingIndicator label={connecting ? "Connecting…" : "Thinking…"} />
+                  <LoadingIndicator
+                    label={connecting ? "Connecting…" : "Thinking…"}
+                    elapsedSeconds={awaitingAnswer ? elapsedSeconds : undefined}
+                  />
                 </div>
               )}
               <div ref={scrollRef} />

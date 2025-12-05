@@ -4,7 +4,7 @@ import { getChats } from "../lib/api";
 import { env } from "../config/env";
 
 // Frontend version from package.json (injected at build time via Vite)
-const FRONTEND_VERSION = '1.0.2'
+const FRONTEND_VERSION = '1.0.3'
 
 interface Chat {
   id: string;

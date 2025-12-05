@@ -37,10 +37,10 @@ export const settingsSchema = {
   },
   gemini_model: {
     label: 'Gemini Model',
-    description: 'Model to use. gemini-2.5-flash is fast, gemini-2.5-pro is more capable',
+    description: 'Model to use. gemini-2.5-flash-lite is fastest, gemini-2.5-pro is most capable',
     type: 'select',
-    options: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
-    default: 'gemini-2.5-flash',
+    options: ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    default: 'gemini-2.5-flash-lite',
     category: 'Gemini',
     sensitive: false
   },

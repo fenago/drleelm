@@ -9,6 +9,7 @@ import { plannerRoutes } from "./routes/planner";
 import { debateRoutes } from "./routes/debate";
 import { companionRoutes } from "./routes/companion";
 import { settingsRoutes } from "./routes/settings";
+import { modelsRoutes } from "./routes/models";
 
 export function registerRoutes(app: any) {
   chatRoutes(app);
@@ -22,4 +23,5 @@ export function registerRoutes(app: any) {
   debateRoutes(app);
   companionRoutes(app);
   settingsRoutes(app);
+  modelsRoutes(app);
 }
