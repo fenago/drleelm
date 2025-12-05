@@ -1,7 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { companionAsk, type FlashCard } from "../../lib/api"
 import MarkdownView from "../Chat/MarkdownView"
 import { useCompanion } from "./CompanionProvider"
+
+// Custom hook for elapsed time tracking
+function useElapsedTimer(isRunning: boolean) {
+  const [elapsed, setElapsed] = useState(0)
+  const startTimeRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (isRunning) {
+      startTimeRef.current = Date.now()
+      setElapsed(0)
+      const interval = setInterval(() => {
+        if (startTimeRef.current) {
+          setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000))
+        }
+      }, 1000)
+      return () => clearInterval(interval)
+    } else {
+      startTimeRef.current = null
+    }
+  }, [isRunning])
+
+  return elapsed
+}
 
 type CompanionMessage = {
   id: string
@@ -37,6 +60,7 @@ export default function CompanionDock() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const elapsedSeconds = useElapsedTimer(busy)
 
   const hasDocument = !!document
 
@@ -223,8 +247,16 @@ export default function CompanionDock() {
 
           {busy && (
             <div className="flex justify-start">
-              <div className="px-4 py-2 rounded-2xl bg-stone-900/80 border border-stone-700 text-xs text-stone-300 animate-pulse">
-                Thinking�?�
+              <div className="px-4 py-2 rounded-2xl bg-stone-900/80 border border-stone-700 text-xs text-stone-300">
+                <div className="flex items-center gap-2">
+                  <span className="animate-pulse">Thinking...</span>
+                  <span className="font-mono text-sky-400 tabular-nums">{elapsedSeconds}s</span>
+                </div>
+                {elapsedSeconds > 10 && (
+                  <div className="text-[10px] text-stone-400 mt-1">
+                    LLM requests can take 15-30+ seconds
+                  </div>
+                )}
               </div>
             </div>
           )}

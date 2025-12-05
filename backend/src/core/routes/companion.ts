@@ -73,10 +73,13 @@ Favor concise, actionable study guidance grounded in the provided material.
 
 export function companionRoutes(app: any) {
   app.post("/api/companion/ask", async (req: any, res: any) => {
-    console.log("[companion] /api/companion/ask called")
+    const requestStart = Date.now()
+    const elapsed = () => `${((Date.now() - requestStart) / 1000).toFixed(2)}s`
+
+    console.log(`[companion] /api/companion/ask called at ${new Date().toISOString()}`)
     try {
       const body = req.body || {}
-      console.log("[companion] Request body keys:", Object.keys(body))
+      console.log(`[companion] [${elapsed()}] Request body keys:`, Object.keys(body))
       const question = typeof body.question === "string" ? body.question.trim() : ""
       if (!question) return res.status(400).send({ error: "question required" })
 
@@ -88,12 +91,14 @@ export function companionRoutes(app: any) {
 
       if (typeof body.documentText === "string" && body.documentText.trim()) {
         contextText = body.documentText
+        console.log(`[companion] [${elapsed()}] Using provided documentText (${contextText.length} chars)`)
       } else if (typeof body.filePath === "string" && body.filePath.trim()) {
         const resolved = resolveDocumentPath(body.filePath)
         if (!resolved) return res.status(404).send({ error: "document not found or not accessible" })
         filename = path.basename(resolved)
         try {
           contextText = await readDocumentText(resolved)
+          console.log(`[companion] [${elapsed()}] Read file ${filename} (${contextText.length} chars)`)
         } catch (err: any) {
           const msg = err?.message || "unable to read document"
           return res.status(400).send({ error: msg })
@@ -106,8 +111,10 @@ export function companionRoutes(app: any) {
         return res.status(400).send({ error: "document is empty" })
       }
 
-      console.log("[companion] Calling askWithContext with question:", question.slice(0, 50), "context length:", contextText.length)
+      console.log(`[companion] [${elapsed()}] Starting LLM call - question: "${question.slice(0, 50)}..." context: ${contextText.length} chars`)
       const prompt = buildCompanionPrompt(filename || documentTitle)
+      const llmStart = Date.now()
+
       const answer = await askWithContext({
         question,
         context: contextText,
@@ -116,11 +123,14 @@ export function companionRoutes(app: any) {
         systemPrompt: prompt,
         cacheScope: "companion"
       })
-      console.log("[companion] Got answer, responding")
+
+      const llmTime = ((Date.now() - llmStart) / 1000).toFixed(2)
+      console.log(`[companion] [${elapsed()}] LLM call completed in ${llmTime}s`)
+      console.log(`[companion] [${elapsed()}] Sending response`)
 
       res.send({ ok: true, companion: answer })
     } catch (err: any) {
-      console.error("[companion] ask failed", err?.message || err, err?.stack || "")
+      console.error(`[companion] [${elapsed()}] ERROR:`, err?.message || err, err?.stack || "")
       res.status(500).send({ error: "failed to run companion request" })
     }
   })

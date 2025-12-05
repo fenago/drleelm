@@ -274,7 +274,10 @@ type AskWithContextOptions = {
 }
 
 export async function askWithContext(opts: AskWithContextOptions): Promise<AskPayload> {
-  console.log("[askWithContext] Starting...")
+  const startTime = Date.now()
+  const elapsed = () => `${((Date.now() - startTime) / 1000).toFixed(2)}s`
+
+  console.log(`[askWithContext] [${elapsed()}] Starting...`)
   const rawQuestion = typeof opts.question === "string" ? opts.question : String(opts.question ?? "")
   const safeQ = normalizeTopic(rawQuestion)
   const ctx = typeof opts.context === "string" && opts.context.trim() ? opts.context : "NO_CONTEXT"
@@ -285,12 +288,17 @@ export async function askWithContext(opts: AskWithContextOptions): Promise<AskPa
   const historyArr = Array.isArray(opts.history) ? opts.history : undefined
   const historyCache = serializeHistoryForCache(historyArr)
 
+  console.log(`[askWithContext] [${elapsed()}] Input processed - question: ${safeQ.length} chars, context: ${ctx.length} chars, prompt: ${systemPrompt.length} chars`)
+
   const ck = { t: opts.cacheScope || "ask_ctx", q: safeQ, ctx, topic, sys: systemPrompt, hist: historyCache }
+  const cacheStart = Date.now()
   const cached = readCache(ck)
+  const cacheTime = Date.now() - cacheStart
   if (cached) {
-    console.log("[askWithContext] Cache hit")
+    console.log(`[askWithContext] [${elapsed()}] Cache HIT (lookup: ${cacheTime}ms)`)
     return cached
   }
+  console.log(`[askWithContext] [${elapsed()}] Cache miss (lookup: ${cacheTime}ms)`)
 
   const messages: any[] = [{ role: "system", content: systemPrompt }]
   for (const msg of toConversationHistory(historyArr)) messages.push(msg)
@@ -300,12 +308,19 @@ export async function askWithContext(opts: AskWithContextOptions): Promise<AskPa
     content: `Context:\n${ctx}\n\nQuestion:\n${safeQ}\n\nTopic:\n${topic}\n\nReturn only the JSON object.`
   })
 
-  console.log("[askWithContext] Calling LLM with", messages.length, "messages, total chars:", JSON.stringify(messages).length)
+  const totalChars = JSON.stringify(messages).length
+  console.log(`[askWithContext] [${elapsed()}] Prepared ${messages.length} messages (${totalChars} total chars) - calling LLM...`)
+
+  const llmStart = Date.now()
   const res = await llm.call(messages as any)
-  console.log("[askWithContext] LLM responded")
+  const llmTime = ((Date.now() - llmStart) / 1000).toFixed(2)
+  console.log(`[askWithContext] [${elapsed()}] LLM responded in ${llmTime}s`)
+
+  const parseStart = Date.now()
   const draft = toText(res).trim()
   const jsonStr = extractFirstJsonObject(draft) || draft
   const parsed = tryParse<any>(jsonStr)
+  const parseTime = Date.now() - parseStart
 
   const out: AskPayload =
     parsed && typeof parsed === "object"
@@ -316,7 +331,11 @@ export async function askWithContext(opts: AskWithContextOptions): Promise<AskPa
       }
       : { topic, answer: draft, flashcards: [] }
 
+  const cacheWriteStart = Date.now()
   writeCache(ck, out)
+  const cacheWriteTime = Date.now() - cacheWriteStart
+
+  console.log(`[askWithContext] [${elapsed()}] Complete - LLM: ${llmTime}s, parse: ${parseTime}ms, cache write: ${cacheWriteTime}ms, answer: ${out.answer.length} chars, flashcards: ${out.flashcards.length}`)
   return out
 }
 

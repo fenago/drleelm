@@ -202,12 +202,25 @@ export async function companionAsk(input: {
     payload.history = input.history.map((h) => ({ role: h.role, content: h.content }));
   }
 
-  return req<CompanionAskResponse>(`${env.backend}/api/companion/ask`, {
-    method: "POST",
-    headers: jsonHeaders({}),
-    body: JSON.stringify(payload),
-    timeout: Math.max(env.timeout, 120000),
-  });
+  const startTime = performance.now();
+  console.log(`[companionAsk] Starting request to ${env.backend}/api/companion/ask`);
+  console.log(`[companionAsk] Question: "${question.slice(0, 50)}..." Context length: ${(input.documentText || "").length} chars`);
+
+  try {
+    const result = await req<CompanionAskResponse>(`${env.backend}/api/companion/ask`, {
+      method: "POST",
+      headers: jsonHeaders({}),
+      body: JSON.stringify(payload),
+      timeout: Math.max(env.timeout, 120000),
+    });
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+    console.log(`[companionAsk] SUCCESS after ${elapsed}s`);
+    return result;
+  } catch (err) {
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+    console.error(`[companionAsk] FAILED after ${elapsed}s:`, err);
+    throw err;
+  }
 }
 
 export function getChats() {
