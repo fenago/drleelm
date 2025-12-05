@@ -188,13 +188,17 @@ export default function Chat() {
       });
   }, [chatId, navigate]);
 
+  const wsConnectedRef = useRef<boolean>(false);
+
   useEffect(() => {
     if (!chatId) return;
+    wsConnectedRef.current = false;
     const wsUrl = (env.backend || window.location.origin).replace(/^http/, "ws") + `/ws/chat?chatId=${encodeURIComponent(chatId)}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
+      wsConnectedRef.current = true;
       setConnecting(false);
       setChatError(null);
     };
@@ -238,22 +242,31 @@ export default function Chat() {
     };
 
     ws.onerror = () => {
-      // Don't clear polling on WebSocket error - let polling continue as fallback
+      // WebSocket failed - mark as not connected so we rely on polling
+      wsConnectedRef.current = false;
       setConnecting(false);
     };
 
     ws.onclose = (ev) => {
-      // If connection closes unexpectedly, let polling handle the answer
-      // Only show error if it's a hard failure and we're not polling
-      if (ev.code !== 1000 && !ev.wasClean && !answerTimeoutRef.current) {
-        setAwaitingAnswer(false);
-        setChatError("Connection lost. Please refresh the page.");
+      wsConnectedRef.current = false;
+      // Only show error if WebSocket was our only hope (no polling running)
+      // and the close was unexpected
+      if (ev.code !== 1000 && !ev.wasClean && !answerTimeoutRef.current && !awaitingAnswerRef.current) {
+        // Don't show error for initial connection failures - polling will handle it
+        if (ev.code === 1006) {
+          // Connection failed before establishment - this is common in production
+          // Just clear connecting state, polling will handle answers
+          setConnecting(false);
+        } else {
+          setChatError("Connection lost. Please refresh the page.");
+        }
       }
     };
 
     return () => {
       try { ws.close(); } catch { }
       wsRef.current = null;
+      wsConnectedRef.current = false;
       // Clear polling timeout on unmount
       if (answerTimeoutRef.current) {
         clearTimeout(answerTimeoutRef.current);
@@ -338,16 +351,20 @@ export default function Chat() {
     })();
   }, []);
 
+  // Track the number of user messages to detect when we get a new assistant response
+  const lastUserMsgCountRef = useRef<number>(0);
+
   // Poll for answer if WebSocket doesn't deliver it (handles race condition)
-  const pollForAnswer = async (targetChatId: string) => {
+  const pollForAnswer = async (targetChatId: string, userMsgCount: number) => {
     // Clear any existing timeout
     if (answerTimeoutRef.current) {
       clearTimeout(answerTimeoutRef.current);
       answerTimeoutRef.current = null;
     }
 
-    const pollInterval = 3000; // Poll every 3 seconds
-    const maxAttempts = 40; // Max 2 minutes of polling
+    lastUserMsgCountRef.current = userMsgCount;
+    const pollInterval = 2000; // Poll every 2 seconds
+    const maxAttempts = 60; // Max 2 minutes of polling
     let attempts = 0;
 
     const doPoll = async () => {
@@ -356,9 +373,12 @@ export default function Chat() {
       try {
         const res = await getChatDetail(targetChatId);
         if (res?.ok && Array.isArray(res.messages)) {
-          // Check if we have a new assistant message
+          // Count user messages to see if we have a new assistant response
+          const userMsgs = res.messages.filter((m: ChatMessage) => m.role === "user");
           const assistantMsgs = res.messages.filter((m: ChatMessage) => m.role === "assistant");
-          if (assistantMsgs.length > 0) {
+
+          // We expect an assistant message after our user message
+          if (assistantMsgs.length >= userMsgs.length && userMsgs.length >= lastUserMsgCountRef.current) {
             const lastAssistant = res.messages[res.messages.length - 1];
             if (lastAssistant?.role === "assistant") {
               // Found the answer! Update state
@@ -390,14 +410,17 @@ export default function Chat() {
       }
     };
 
-    // Start polling after initial delay (give WebSocket a chance first)
-    answerTimeoutRef.current = setTimeout(doPoll, 5000);
+    // Start polling faster if WebSocket isn't connected, otherwise give WS a chance
+    const initialDelay = wsConnectedRef.current ? 3000 : 1000;
+    answerTimeoutRef.current = setTimeout(doPoll, initialDelay);
   };
 
   const sendFollowup = async (q: string) => {
     const text = q.trim();
     if (!text || busy) return;
     setChatError(null);
+    // Count user messages before adding the new one (including the one we're about to add)
+    const currentUserMsgCount = (Array.isArray(messages) ? messages.filter(m => m.role === "user").length : 0) + 1;
     setMessages((prev) => ([...(Array.isArray(prev) ? prev : []), { role: "user", content: text, at: Date.now() }]));
     setAwaitingAnswer(true);
     setBusy(true);
@@ -406,7 +429,7 @@ export default function Chat() {
       const targetChatId = r?.chatId || chatId;
       if (r?.chatId && r.chatId !== chatId) setChatId(r.chatId);
       // Start polling as a fallback in case WebSocket misses the answer
-      if (targetChatId) pollForAnswer(targetChatId);
+      if (targetChatId) pollForAnswer(targetChatId, currentUserMsgCount);
     } catch (e) {
       console.error("[sendFollowup] Error:", e);
       setAwaitingAnswer(false);
