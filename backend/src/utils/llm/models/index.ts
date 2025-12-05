@@ -22,6 +22,8 @@ function pick(p: string) {
 }
 
 export function makeModels(): Pair {
+  console.log("[makeModels] LLM_PROVIDER:", config.provider)
+  console.log("[makeModels] EMB_PROVIDER:", config.embeddings_provider)
   const mod = pick(config.provider)
   const llm = mod.makeLLM(config)
 

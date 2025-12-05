@@ -73,8 +73,10 @@ Favor concise, actionable study guidance grounded in the provided material.
 
 export function companionRoutes(app: any) {
   app.post("/api/companion/ask", async (req: any, res: any) => {
+    console.log("[companion] /api/companion/ask called")
     try {
       const body = req.body || {}
+      console.log("[companion] Request body keys:", Object.keys(body))
       const question = typeof body.question === "string" ? body.question.trim() : ""
       if (!question) return res.status(400).send({ error: "question required" })
 
@@ -104,6 +106,7 @@ export function companionRoutes(app: any) {
         return res.status(400).send({ error: "document is empty" })
       }
 
+      console.log("[companion] Calling askWithContext with question:", question.slice(0, 50), "context length:", contextText.length)
       const prompt = buildCompanionPrompt(filename || documentTitle)
       const answer = await askWithContext({
         question,
@@ -113,10 +116,11 @@ export function companionRoutes(app: any) {
         systemPrompt: prompt,
         cacheScope: "companion"
       })
+      console.log("[companion] Got answer, responding")
 
       res.send({ ok: true, companion: answer })
     } catch (err: any) {
-      console.error("[companion] ask failed", err?.message || err)
+      console.error("[companion] ask failed", err?.message || err, err?.stack || "")
       res.status(500).send({ error: "failed to run companion request" })
     }
   })

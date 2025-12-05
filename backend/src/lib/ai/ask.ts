@@ -274,6 +274,7 @@ type AskWithContextOptions = {
 }
 
 export async function askWithContext(opts: AskWithContextOptions): Promise<AskPayload> {
+  console.log("[askWithContext] Starting...")
   const rawQuestion = typeof opts.question === "string" ? opts.question : String(opts.question ?? "")
   const safeQ = normalizeTopic(rawQuestion)
   const ctx = typeof opts.context === "string" && opts.context.trim() ? opts.context : "NO_CONTEXT"
@@ -286,7 +287,10 @@ export async function askWithContext(opts: AskWithContextOptions): Promise<AskPa
 
   const ck = { t: opts.cacheScope || "ask_ctx", q: safeQ, ctx, topic, sys: systemPrompt, hist: historyCache }
   const cached = readCache(ck)
-  if (cached) return cached
+  if (cached) {
+    console.log("[askWithContext] Cache hit")
+    return cached
+  }
 
   const messages: any[] = [{ role: "system", content: systemPrompt }]
   for (const msg of toConversationHistory(historyArr)) messages.push(msg)
@@ -296,7 +300,9 @@ export async function askWithContext(opts: AskWithContextOptions): Promise<AskPa
     content: `Context:\n${ctx}\n\nQuestion:\n${safeQ}\n\nTopic:\n${topic}\n\nReturn only the JSON object.`
   })
 
+  console.log("[askWithContext] Calling LLM with", messages.length, "messages, total chars:", JSON.stringify(messages).length)
   const res = await llm.call(messages as any)
+  console.log("[askWithContext] LLM responded")
   const draft = toText(res).trim()
   const jsonStr = extractFirstJsonObject(draft) || draft
   const parsed = tryParse<any>(jsonStr)
