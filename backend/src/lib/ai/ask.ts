@@ -312,7 +312,15 @@ export async function askWithContext(opts: AskWithContextOptions): Promise<AskPa
   console.log(`[askWithContext] [${elapsed()}] Prepared ${messages.length} messages (${totalChars} total chars) - calling LLM...`)
 
   const llmStart = Date.now()
-  const res = await llm.call(messages as any)
+  const LLM_TIMEOUT_MS = 120000 // 2 minute timeout for LLM calls
+
+  // Wrap LLM call with timeout to prevent hanging forever
+  const llmPromise = llm.call(messages as any)
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error(`LLM timeout: exceeded ${LLM_TIMEOUT_MS}ms`)), LLM_TIMEOUT_MS)
+  })
+
+  const res = await Promise.race([llmPromise, timeoutPromise])
   const llmTime = ((Date.now() - llmStart) / 1000).toFixed(2)
   console.log(`[askWithContext] [${elapsed()}] LLM responded in ${llmTime}s`)
 

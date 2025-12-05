@@ -103,6 +103,7 @@ export default function Chat() {
   const wsRef = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const seenRef = useRef<Set<string>>(new Set());
+  const answerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const keyFor = (kind: BagItem["kind"], title: string, content: string) =>
     `${kind}:${title.trim().toLowerCase()}|${content.trim().toLowerCase()}`;
 
@@ -196,6 +197,11 @@ export default function Chat() {
       try {
         const m = JSON.parse(ev.data);
         if (m?.type === "answer") {
+          // Clear polling timeout - we got the answer via WebSocket
+          if (answerTimeoutRef.current) {
+            clearTimeout(answerTimeoutRef.current);
+            answerTimeoutRef.current = null;
+          }
           const norm = normalizePayload(m.answer);
           setMessages((prev) => ([...(Array.isArray(prev) ? prev : []), { role: "assistant", content: norm.md, at: Date.now() }]));
           if (norm.flashcards.length) setCards(norm.flashcards);
@@ -206,32 +212,48 @@ export default function Chat() {
           setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 0);
         } else if (m?.type === "done") {
           // Safety net: ensure timer stops when backend signals completion
+          if (answerTimeoutRef.current) {
+            clearTimeout(answerTimeoutRef.current);
+            answerTimeoutRef.current = null;
+          }
           setAwaitingAnswer(false);
         } else if (m?.type === "error") {
           // Stop timer and show error when backend reports failure
+          if (answerTimeoutRef.current) {
+            clearTimeout(answerTimeoutRef.current);
+            answerTimeoutRef.current = null;
+          }
           setAwaitingAnswer(false);
           setChatError(m.error || "Something went wrong. Please try again.");
         }
-      } catch { }
-    };
-
-    ws.onerror = () => {
-      setConnecting(false);
-      setAwaitingAnswer(false);
-      setChatError("Connection error. Please refresh and try again.");
-    };
-
-    ws.onclose = (ev) => {
-      // If connection closes unexpectedly while awaiting, stop the timer
-      if (ev.code !== 1000) {
-        setAwaitingAnswer(false);
-        if (!ev.wasClean) {
-          setChatError("Connection lost. Please refresh the page.");
-        }
+      } catch (e) {
+        console.error("[WebSocket] Failed to parse message:", e, ev.data);
       }
     };
 
-    return () => { try { ws.close(); } catch { } wsRef.current = null; };
+    ws.onerror = () => {
+      // Don't clear polling on WebSocket error - let polling continue as fallback
+      setConnecting(false);
+    };
+
+    ws.onclose = (ev) => {
+      // If connection closes unexpectedly, let polling handle the answer
+      // Only show error if it's a hard failure and we're not polling
+      if (ev.code !== 1000 && !ev.wasClean && !answerTimeoutRef.current) {
+        setAwaitingAnswer(false);
+        setChatError("Connection lost. Please refresh the page.");
+      }
+    };
+
+    return () => {
+      try { ws.close(); } catch { }
+      wsRef.current = null;
+      // Clear polling timeout on unmount
+      if (answerTimeoutRef.current) {
+        clearTimeout(answerTimeoutRef.current);
+        answerTimeoutRef.current = null;
+      }
+    };
   }, [chatId]);
 
   useEffect(() => {
@@ -310,6 +332,62 @@ export default function Chat() {
     })();
   }, []);
 
+  // Poll for answer if WebSocket doesn't deliver it (handles race condition)
+  const pollForAnswer = async (targetChatId: string) => {
+    // Clear any existing timeout
+    if (answerTimeoutRef.current) {
+      clearTimeout(answerTimeoutRef.current);
+      answerTimeoutRef.current = null;
+    }
+
+    const pollInterval = 3000; // Poll every 3 seconds
+    const maxAttempts = 40; // Max 2 minutes of polling
+    let attempts = 0;
+
+    const doPoll = async () => {
+      if (!awaitingAnswer) return; // Already got answer via WebSocket
+
+      try {
+        const res = await getChatDetail(targetChatId);
+        if (res?.ok && Array.isArray(res.messages)) {
+          // Check if we have a new assistant message
+          const assistantMsgs = res.messages.filter((m: ChatMessage) => m.role === "assistant");
+          if (assistantMsgs.length > 0) {
+            const lastAssistant = res.messages[res.messages.length - 1];
+            if (lastAssistant?.role === "assistant") {
+              // Found the answer! Update state
+              const norm = normalizePayload(lastAssistant.content);
+              setMessages(res.messages.map((m: ChatMessage) =>
+                m.role === "assistant" ? { ...m, content: normalizePayload(m.content).md } : m
+              ));
+              if (norm.flashcards.length) setCards(norm.flashcards);
+              if (norm.topic) setTopic(norm.topic);
+              else if (norm.md) setTopic((t) => t || deriveTopicFromMarkdown(norm.md));
+              setAwaitingAnswer(false);
+              setChatError(null);
+              setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 0);
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        console.error("[pollForAnswer] Error:", e);
+      }
+
+      attempts++;
+      if (attempts < maxAttempts && awaitingAnswer) {
+        answerTimeoutRef.current = setTimeout(doPoll, pollInterval);
+      } else if (attempts >= maxAttempts && awaitingAnswer) {
+        // Give up after max attempts
+        setAwaitingAnswer(false);
+        setChatError("Request timed out. Please try again.");
+      }
+    };
+
+    // Start polling after initial delay (give WebSocket a chance first)
+    answerTimeoutRef.current = setTimeout(doPoll, 5000);
+  };
+
   const sendFollowup = async (q: string) => {
     const text = q.trim();
     if (!text || busy) return;
@@ -319,7 +397,14 @@ export default function Chat() {
     setBusy(true);
     try {
       const r = await chatJSON({ q: text, chatId: chatId || undefined });
+      const targetChatId = r?.chatId || chatId;
       if (r?.chatId && r.chatId !== chatId) setChatId(r.chatId);
+      // Start polling as a fallback in case WebSocket misses the answer
+      if (targetChatId) pollForAnswer(targetChatId);
+    } catch (e) {
+      console.error("[sendFollowup] Error:", e);
+      setAwaitingAnswer(false);
+      setChatError("Failed to send message. Please try again.");
     } finally {
       setBusy(false);
       setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 0);
