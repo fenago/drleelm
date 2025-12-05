@@ -13,9 +13,9 @@ if (!fs.existsSync(storageDir)) {
 const dbPath = path.join(storageDir, 'database.sqlite')
 console.log('[keyv] Database path:', dbPath)
 
-// Create Keyv with SQLite store - pass URI directly to constructor
-const store = new KeyvSqlite(`sqlite://${dbPath}`)
-const db = new Keyv({ store })
+// Create Keyv with SQLite store - pass KeyvSqlite instance directly to Keyv constructor
+// Per docs: new Keyv(new KeyvSqlite('sqlite://path'))
+const db = new Keyv(new KeyvSqlite(`sqlite://${dbPath}`))
 
 // Log database errors
 db.on('error', (err) => console.error('[keyv] Connection Error:', err))
