@@ -96,6 +96,7 @@ export default function Chat() {
   const [awaitingAnswer, setAwaitingAnswer] = useState<boolean>(false);
   const [topic, setTopic] = useState<string>("");
   const [chatError, setChatError] = useState<string | null>(null);
+  const [slowWarning, setSlowWarning] = useState(false);
   const { setDocument } = useCompanion();
   const elapsedSeconds = useElapsedTimer(awaitingAnswer);
 
@@ -105,6 +106,13 @@ export default function Chat() {
   const seenRef = useRef<Set<string>>(new Set());
   const answerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const awaitingAnswerRef = useRef<boolean>(false);
+  const timeoutWarningRefs = useRef<{ t5?: ReturnType<typeof setTimeout>; t10?: ReturnType<typeof setTimeout> }>({});
+
+  function clearTimeoutWarnings() {
+    if (timeoutWarningRefs.current.t5) clearTimeout(timeoutWarningRefs.current.t5);
+    if (timeoutWarningRefs.current.t10) clearTimeout(timeoutWarningRefs.current.t10);
+    setSlowWarning(false);
+  }
   const keyFor = (kind: BagItem["kind"], title: string, content: string) =>
     `${kind}:${title.trim().toLowerCase()}|${content.trim().toLowerCase()}`;
 
@@ -215,6 +223,7 @@ export default function Chat() {
             clearTimeout(answerTimeoutRef.current);
             answerTimeoutRef.current = null;
           }
+          clearTimeoutWarnings();
           const norm = normalizePayload(m.answer);
           setMessages((prev) => ([...(Array.isArray(prev) ? prev : []), { role: "assistant", content: norm.md, at: Date.now() }]));
           if (norm.flashcards.length) setCards(norm.flashcards);
@@ -229,6 +238,7 @@ export default function Chat() {
             clearTimeout(answerTimeoutRef.current);
             answerTimeoutRef.current = null;
           }
+          clearTimeoutWarnings();
           setAwaitingAnswer(false);
         } else if (m?.type === "error") {
           // Stop timer and show error when backend reports failure
@@ -236,6 +246,7 @@ export default function Chat() {
             clearTimeout(answerTimeoutRef.current);
             answerTimeoutRef.current = null;
           }
+          clearTimeoutWarnings();
           setAwaitingAnswer(false);
           setChatError(m.error || "Something went wrong. Please try again.");
         }
@@ -380,6 +391,7 @@ export default function Chat() {
       // Hard timeout - fail fast with clear error
       if (elapsed > maxWaitTime) {
         console.error("[pollForAnswer] Timeout after", elapsed, "ms");
+        clearTimeoutWarnings();
         setAwaitingAnswer(false);
         setChatError("Response timed out after 45 seconds. The server may be overloaded or misconfigured. Please try again.");
         return;
@@ -399,6 +411,7 @@ export default function Chat() {
             const lastAssistant = res.messages[res.messages.length - 1];
             if (lastAssistant?.role === "assistant") {
               // Found the answer! Update state
+              clearTimeoutWarnings();
               const norm = normalizePayload(lastAssistant.content);
               setMessages(res.messages.map((m: ChatMessage) =>
                 m.role === "assistant" ? { ...m, content: normalizePayload(m.content).md } : m
@@ -425,6 +438,7 @@ export default function Chat() {
       // If we have 3+ consecutive errors, fail immediately
       if (consecutiveErrors >= 3) {
         console.error("[pollForAnswer] Too many consecutive errors, giving up");
+        clearTimeoutWarnings();
         setAwaitingAnswer(false);
         setChatError("Failed to get response from server. Please check your connection and try again.");
         return;
@@ -445,6 +459,17 @@ export default function Chat() {
     const text = q.trim();
     if (!text || busy) return;
     setChatError(null);
+    clearTimeoutWarnings();
+
+    // Set up timeout warnings
+    timeoutWarningRefs.current.t5 = setTimeout(() => {
+      console.warn("[Chat] Still waiting after 5 seconds...");
+    }, 5000);
+    timeoutWarningRefs.current.t10 = setTimeout(() => {
+      console.warn("[Chat] Still waiting after 10 seconds - this is taking longer than expected");
+      setSlowWarning(true);
+    }, 10000);
+
     // Count user messages before adding the new one (including the one we're about to add)
     const currentUserMsgCount = (Array.isArray(messages) ? messages.filter(m => m.role === "user").length : 0) + 1;
     setMessages((prev) => ([...(Array.isArray(prev) ? prev : []), { role: "user", content: text, at: Date.now() }]));
@@ -458,6 +483,7 @@ export default function Chat() {
       if (targetChatId) pollForAnswer(targetChatId, currentUserMsgCount);
     } catch (e) {
       console.error("[sendFollowup] Error:", e);
+      clearTimeoutWarnings();
       setAwaitingAnswer(false);
       setChatError("Failed to send message. Please try again.");
     } finally {
@@ -522,11 +548,16 @@ export default function Chat() {
                 );
               })}
               {(connecting || awaitingAnswer) && (
-                <div className="w-full flex justify-start">
+                <div className="w-full flex justify-start flex-col gap-2">
                   <LoadingIndicator
                     label={connecting ? "Connecting…" : "Thinking…"}
                     elapsedSeconds={awaitingAnswer ? elapsedSeconds : undefined}
                   />
+                  {slowWarning && (
+                    <div className="p-3 rounded-xl bg-yellow-900/30 border border-yellow-700/50 text-yellow-200 text-sm">
+                      This is taking longer than expected. Please wait...
+                    </div>
+                  )}
                 </div>
               )}
               {chatError && !awaitingAnswer && (

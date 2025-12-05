@@ -43,9 +43,17 @@ export default function ExamLabs() {
 
   const [connecting, setConnecting] = useState(false)
   const [activeExam, setActiveExam] = useState<string | null>(null)
+  const [slowWarning, setSlowWarning] = useState(false)
 
   const closeRef = useRef<null | (() => void)>(null)
+  const timeoutRefs = useRef<{ t5?: NodeJS.Timeout; t10?: NodeJS.Timeout }>({})
   const navigate = useNavigate()
+
+  function clearTimeoutWarnings() {
+    if (timeoutRefs.current.t5) clearTimeout(timeoutRefs.current.t5)
+    if (timeoutRefs.current.t10) clearTimeout(timeoutRefs.current.t10)
+    setSlowWarning(false)
+  }
 
   const total = qs.length
   const q = qs[idx]
@@ -76,6 +84,7 @@ export default function ExamLabs() {
 
   async function start(id: string) {
     if (closeRef.current) closeRef.current()
+    clearTimeoutWarnings()
     setQs([])
     setIdx(0)
     setScore(0)
@@ -85,21 +94,33 @@ export default function ExamLabs() {
     setActiveExam(id)
     setConnecting(true)
 
+    // Set up timeout warnings
+    timeoutRefs.current.t5 = setTimeout(() => {
+      console.warn("[ExamLabs] Still waiting after 5 seconds...")
+    }, 5000)
+    timeoutRefs.current.t10 = setTimeout(() => {
+      console.warn("[ExamLabs] Still waiting after 10 seconds - this is taking longer than expected")
+      setSlowWarning(true)
+    }, 10000)
+
     try {
       const { runId } = await startExam(id)
       const { close } = connectExamStream(runId, (ev: ExamEvent) => {
         if (ev.type === "exam") {
+          clearTimeoutWarnings()
           const arr = Array.isArray(ev.payload) ? ev.payload : []
           setQs(arr.map((q: any) => ({ ...q, correct: Math.max(0, q.correct - 1) })))
           setIdx(0)
           setConnecting(false)
         }
         if (ev.type === "done" || ev.type === "error") {
+          clearTimeoutWarnings()
           setConnecting(false)
         }
       })
       closeRef.current = close
     } catch {
+      clearTimeoutWarnings()
       setConnecting(false)
     }
   }
@@ -205,6 +226,11 @@ export default function ExamLabs() {
         {connecting && (
           <div className="mt-10">
             <LoadingIndicator label="Building your exam…" />
+            {slowWarning && (
+              <div className="mt-4 p-4 rounded-xl bg-yellow-900/30 border border-yellow-700/50 text-yellow-200 text-sm text-center">
+                This is taking longer than expected. Please wait...
+              </div>
+            )}
           </div>
         )}
 

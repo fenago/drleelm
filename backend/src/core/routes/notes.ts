@@ -1,6 +1,7 @@
 import { handleSmartNotes } from "../../services/smartnotes";
 import { emitToAll } from "../../utils/chat/ws";
 import { withTimeout } from "../../utils/quiz/promise";
+import { createJob, setJobRunning, setJobDone, setJobError, getJob } from "../../utils/jobs/status";
 import { config } from "../../config/env";
 import crypto from "crypto";
 import path from "path";
@@ -56,28 +57,32 @@ export function smartnotesRoutes(app: any) {
         .status(202)
         .send({ ok: true, noteId, stream: `/ws/smartnotes?noteId=${noteId}` });
 
+      createJob(noteId);
       setImmediate(async () => {
         try {
+          setJobRunning(noteId);
           emitToAll(ns.get(noteId), { type: "phase", value: "generating" });
           const result = await withTimeout(
             handleSmartNotes({ topic, notes, filePath }),
             120000,
             "handleSmartNotes"
           );
+          const fileUrl = `${config.url}/storage/smartnotes/${path.basename(result.file)}`;
           nlog("generated", noteId, result.file);
+          setJobDone(noteId, { file: fileUrl });
           emitToAll(ns.get(noteId), {
             type: "file",
-            file: `${config.url}/storage/smartnotes/${path.basename(
-              result.file
-            )}`,
+            file: fileUrl,
           });
           emitToAll(ns.get(noteId), { type: "done" });
           nlog("done", noteId);
         } catch (e: any) {
-          nlog("error", noteId, e?.message || e);
+          const errMsg = e?.message || "failed";
+          nlog("error", noteId, errMsg);
+          setJobError(noteId, errMsg);
           emitToAll(ns.get(noteId), {
             type: "error",
-            error: e?.message || "failed",
+            error: errMsg,
           });
         }
       });
@@ -85,5 +90,20 @@ export function smartnotesRoutes(app: any) {
       nlog("500 route err", e?.message || e);
       res.status(500).send({ ok: false, error: e?.message || "internal" });
     }
+  });
+
+  app.get("/smartnotes/:id/status", (req: any, res: any) => {
+    const id = req.params.id;
+    const job = getJob(id);
+    if (!job) {
+      return res.status(404).send({ ok: false, error: "not found" });
+    }
+    res.send({
+      ok: true,
+      noteId: id,
+      status: job.status,
+      result: job.status === "done" ? job.result : undefined,
+      error: job.status === "error" ? job.error : undefined
+    });
   });
 }

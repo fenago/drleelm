@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { smartnotesStart, connectSmartnotesStream, type SmartNotesEvent } from "../../lib/api"
 
 export default function SmartNotes() {
@@ -6,22 +6,41 @@ export default function SmartNotes() {
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState("")
   const [filePath, setFilePath] = useState<string | null>(null)
+  const [slowWarning, setSlowWarning] = useState(false)
+  const timeoutRefs = useRef<{ t5?: NodeJS.Timeout; t10?: NodeJS.Timeout }>({})
+
+  function clearTimeoutWarnings() {
+    if (timeoutRefs.current.t5) clearTimeout(timeoutRefs.current.t5)
+    if (timeoutRefs.current.t10) clearTimeout(timeoutRefs.current.t10)
+    setSlowWarning(false)
+  }
 
   const onGenerate = async () => {
     if (!topic.trim() || busy) return
     setBusy(true)
     setStatus("Starting…")
     setFilePath(null)
+    clearTimeoutWarnings()
+
+    // Set up timeout warnings
+    timeoutRefs.current.t5 = setTimeout(() => {
+      console.warn("[SmartNotes] Still waiting after 5 seconds...")
+    }, 5000)
+    timeoutRefs.current.t10 = setTimeout(() => {
+      console.warn("[SmartNotes] Still waiting after 10 seconds - this is taking longer than expected")
+      setSlowWarning(true)
+    }, 10000)
 
     try {
       const { noteId } = await smartnotesStart({ topic })
       const { close } = connectSmartnotesStream(noteId, (ev: SmartNotesEvent) => {
         if (ev.type === "phase") setStatus(`Status: ${ev.value}`)
-        if (ev.type === "file") { setFilePath(ev.file); setStatus("Ready") }
-        if (ev.type === "done") { setStatus("Done"); close(); setBusy(false) }
-        if (ev.type === "error") { setStatus(`Error: ${ev.error}`); close(); setBusy(false) }
+        if (ev.type === "file") { clearTimeoutWarnings(); setFilePath(ev.file); setStatus("Ready") }
+        if (ev.type === "done") { clearTimeoutWarnings(); setStatus("Done"); close(); setBusy(false) }
+        if (ev.type === "error") { clearTimeoutWarnings(); setStatus(`Error: ${ev.error}`); close(); setBusy(false) }
       })
     } catch (e: any) {
+      clearTimeoutWarnings()
       setStatus(e.message || "Failed")
       setBusy(false)
     }
@@ -63,7 +82,14 @@ export default function SmartNotes() {
         </div>
 
         {status && (
-          <div className="p-4 rounded-xl bg-sky-950/40 border border-sky-800/40 text-sky-200 font-medium">{status}</div>
+          <div className="p-4 rounded-xl bg-sky-950/40 border border-sky-800/40 text-sky-200 font-medium">
+            {status}
+            {slowWarning && (
+              <div className="mt-2 text-yellow-200 text-sm">
+                This is taking longer than expected. Please wait...
+              </div>
+            )}
+          </div>
         )}
 
         {filePath && (

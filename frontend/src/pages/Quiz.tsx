@@ -37,8 +37,10 @@ export default function Quiz() {
   const [reviewOpen, setReviewOpen] = useState(false);
 
   const [connecting, setConnecting] = useState(false);
+  const [slowWarning, setSlowWarning] = useState(false);
 
   const closeRef = useRef<null | (() => void)>(null);
+  const timeoutRefs = useRef<{ t5?: NodeJS.Timeout; t10?: NodeJS.Timeout }>({});
 
   const total = qs.length;
   const q = qs[idx];
@@ -56,10 +58,17 @@ export default function Quiz() {
     setShowExp(false);
   }
 
+  function clearTimeoutWarnings() {
+    if (timeoutRefs.current.t5) clearTimeout(timeoutRefs.current.t5);
+    if (timeoutRefs.current.t10) clearTimeout(timeoutRefs.current.t10);
+    setSlowWarning(false);
+  }
+
   async function start(t: string) {
     const trimmed = t.trim();
     if (!trimmed) return;
     if (closeRef.current) closeRef.current();
+    clearTimeoutWarnings();
 
     setQs([]);
     resetQuestionState();
@@ -68,10 +77,20 @@ export default function Quiz() {
     setAnswers([]);
     setConnecting(true);
 
+    // Set up timeout warnings
+    timeoutRefs.current.t5 = setTimeout(() => {
+      console.warn("[Quiz] Still waiting after 5 seconds...");
+    }, 5000);
+    timeoutRefs.current.t10 = setTimeout(() => {
+      console.warn("[Quiz] Still waiting after 10 seconds - this is taking longer than expected");
+      setSlowWarning(true);
+    }, 10000);
+
     try {
       const s = await quizStart(trimmed);
       const { close } = connectQuizStream(s.quizId, (ev: QuizEvent) => {
         if (ev.type === "quiz") {
+          clearTimeoutWarnings();
           const arr = takeQuizArray(ev.quiz).map(q => ({
             ...q,
             correct: typeof q.correct === "number" ? Math.max(0, q.correct - 1) : 0
@@ -81,6 +100,7 @@ export default function Quiz() {
           setConnecting(false);
         }
         if (ev.type === "done" || ev.type === "error") {
+          clearTimeoutWarnings();
           setConnecting(false);
         }
       });
@@ -93,6 +113,7 @@ export default function Quiz() {
         });
       }
     } catch {
+      clearTimeoutWarnings();
       setConnecting(false);
     }
   }
@@ -156,7 +177,14 @@ export default function Quiz() {
         )}
 
         {connecting && (
-          <div className="mt-10"><LoadingIndicator label="Building a quiz for you…" /></div>
+          <div className="mt-10">
+            <LoadingIndicator label="Building a quiz for you…" />
+            {slowWarning && (
+              <div className="mt-4 p-4 rounded-xl bg-yellow-900/30 border border-yellow-700/50 text-yellow-200 text-sm text-center">
+                This is taking longer than expected. Please wait...
+              </div>
+            )}
+          </div>
         )}
 
         {qs.length > 0 && !done && q && (

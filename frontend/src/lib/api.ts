@@ -143,7 +143,10 @@ export function connectChatStream(chatId: string, onEvent: (ev: ChatEvent) => vo
     try {
       const data = JSON.parse(m.data as string) as ChatEvent;
       onEvent(data);
-    } catch { }
+    } catch (err) {
+      console.error("[connectChatStream] Failed to parse message:", err);
+      onEvent({ type: "error", error: "invalid_message" });
+    }
   };
   ws.onerror = () => {
     onEvent({ type: "error", error: "stream_error" });
@@ -195,7 +198,10 @@ export function connectCompanionStream(sessionId: string, onEvent: (ev: Companio
   ws.onmessage = (m) => {
     try {
       onEvent(JSON.parse(m.data as string) as CompanionEvent);
-    } catch { }
+    } catch (err) {
+      console.error("[connectCompanionStream] Failed to parse message:", err);
+      onEvent({ type: "error", error: "invalid_message" });
+    }
   };
   ws.onerror = () => onEvent({ type: "error", error: "stream_error" });
   return { ws, close: () => { try { ws.close(); } catch { } } };
@@ -390,7 +396,10 @@ export function connectExamStream(runId: string, onEvent: (ev: ExamEvent) => voi
   ws.onmessage = (m) => {
     try {
       onEvent(JSON.parse(m.data as string) as ExamEvent)
-    } catch { }
+    } catch (err) {
+      console.error("[connectExamStream] Failed to parse message:", err)
+      onEvent({ type: "error", error: "invalid_message" })
+    }
   }
   ws.onerror = () => onEvent({ type: "error", error: "stream_error" })
   return { ws, close: () => { try { ws.close() } catch { } } }
@@ -410,7 +419,10 @@ export function connectSmartnotesStream(noteId: string, onEvent: (ev: SmartNotes
   ws.onmessage = (m) => {
     try {
       onEvent(JSON.parse(m.data as string) as SmartNotesEvent);
-    } catch { }
+    } catch (err) {
+      console.error("[connectSmartnotesStream] Failed to parse message:", err);
+      onEvent({ type: "error", error: "invalid_message" });
+    }
   };
   ws.onerror = () => onEvent({ type: "error", error: "stream_error" });
   return { ws, close: () => { try { ws.close(); } catch { } } };
@@ -470,11 +482,17 @@ export function connectPodcastStream(pid: string, onEvent: (ev: any) => void) {
 
 export function connectQuizStream(quizId: string, onEvent: (ev: QuizEvent) => void) {
   const url = wsURL(`/ws/quiz?quizId=${encodeURIComponent(quizId)}`);
-  const ws = new WebSocket(url); ws.onmessage = m => {
+  const ws = new WebSocket(url);
+  ws.onmessage = (m) => {
     try {
-      onEvent(JSON.parse(m.data as string) as QuizEvent)
-    } catch { }
-  }; ws.onerror = () => onEvent({ type: "error", error: "stream_error" } as any); return { ws, close: () => { try { ws.close() } catch { } } }
+      onEvent(JSON.parse(m.data as string) as QuizEvent);
+    } catch (err) {
+      console.error("[connectQuizStream] Failed to parse message:", err);
+      onEvent({ type: "error", error: "invalid_message" });
+    }
+  };
+  ws.onerror = () => onEvent({ type: "error", error: "stream_error" });
+  return { ws, close: () => { try { ws.close(); } catch { } } };
 }
 
 export async function transcribeAudio(file: File) {
@@ -577,9 +595,13 @@ export function connectPlannerStream(sid: string, onEvent: (ev: PlannerEvent) =>
     try {
       const ev = JSON.parse(m.data as string)
       onEvent(ev)
-    } catch { }
+    } catch (err) {
+      console.error("[connectPlannerStream] Failed to parse message:", err)
+    }
   }
-  ws.onerror = () => { /* ignore for now */ }
+  ws.onerror = (err) => {
+    console.error("[connectPlannerStream] WebSocket error:", err)
+  }
   return { ws, close: () => { try { ws.close() } catch { } } }
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useLocation } from "react-router-dom"
 import { podcastStart, connectPodcastStream, type PodcastEvent } from "../../lib/api"
 
@@ -9,6 +9,14 @@ export default function PodcastGenerator() {
   const [status, setStatus] = useState("")
   const [audioFile, setAudioFile] = useState<string | null>(null)
   const [audioFilename, setAudioFilename] = useState<string | null>(null)
+  const [slowWarning, setSlowWarning] = useState(false)
+  const timeoutRefs = useRef<{ t5?: NodeJS.Timeout; t10?: NodeJS.Timeout }>({})
+
+  function clearTimeoutWarnings() {
+    if (timeoutRefs.current.t5) clearTimeout(timeoutRefs.current.t5)
+    if (timeoutRefs.current.t10) clearTimeout(timeoutRefs.current.t10)
+    setSlowWarning(false)
+  }
 
   useEffect(() => {
     // Check if we were navigated here with a podcast already started
@@ -17,6 +25,16 @@ export default function PodcastGenerator() {
       setTopic(podcastTopic || "")
       setBusy(true)
       setStatus("Connecting to podcast generation...")
+      clearTimeoutWarnings()
+
+      // Set up timeout warnings
+      timeoutRefs.current.t5 = setTimeout(() => {
+        console.warn("[Podcast] Still waiting after 5 seconds...")
+      }, 5000)
+      timeoutRefs.current.t10 = setTimeout(() => {
+        console.warn("[Podcast] Still waiting after 10 seconds - this is taking longer than expected")
+        setSlowWarning(true)
+      }, 10000)
 
       // Connect to the existing podcast stream
       const { close } = connectPodcastStream(podcastPid, (ev: PodcastEvent) => {
@@ -30,12 +48,14 @@ export default function PodcastGenerator() {
           setStatus("Script generated, creating audio...")
         }
         if (ev.type === "audio") {
+          clearTimeoutWarnings()
           const audioUrl = ev.file || ev.staticUrl || ""
           setAudioFile(audioUrl)
           setAudioFilename(ev.filename || "podcast.mp3")
           setStatus("Ready - Audio file is ready!")
         }
         if (ev.type === "done") {
+          clearTimeoutWarnings()
           setStatus("Done")
           setBusy(false)
           setTimeout(() => {
@@ -43,6 +63,7 @@ export default function PodcastGenerator() {
           }, 1000)
         }
         if (ev.type === "error") {
+          clearTimeoutWarnings()
           setStatus(`Error: ${ev.error}`)
           close()
           setBusy(false)
@@ -50,12 +71,14 @@ export default function PodcastGenerator() {
       })
 
       const timeout = setTimeout(() => {
+        clearTimeoutWarnings()
         setStatus("Error: Timeout - generation took too long")
         setBusy(false)
         close()
       }, 120000)
 
       return () => {
+        clearTimeoutWarnings()
         clearTimeout(timeout)
         close()
       }
@@ -69,6 +92,16 @@ export default function PodcastGenerator() {
     setStatus("Starting…")
     setAudioFile(null)
     setAudioFilename(null)
+    clearTimeoutWarnings()
+
+    // Set up timeout warnings
+    timeoutRefs.current.t5 = setTimeout(() => {
+      console.warn("[Podcast] Still waiting after 5 seconds...")
+    }, 5000)
+    timeoutRefs.current.t10 = setTimeout(() => {
+      console.warn("[Podcast] Still waiting after 10 seconds - this is taking longer than expected")
+      setSlowWarning(true)
+    }, 10000)
 
     try {
       const { pid } = await podcastStart({ topic })
@@ -86,6 +119,7 @@ export default function PodcastGenerator() {
           setStatus("Script generated, creating audio...")
         }
         if (ev.type === "audio") {
+          clearTimeoutWarnings()
           const audioUrl = ev.file || ev.staticUrl || ""
 
           setAudioFile(audioUrl)
@@ -93,6 +127,7 @@ export default function PodcastGenerator() {
           setStatus("Ready - Audio file is ready!")
         }
         if (ev.type === "done") {
+          clearTimeoutWarnings()
           setStatus("Done")
           setBusy(false)
           setTimeout(() => {
@@ -100,6 +135,7 @@ export default function PodcastGenerator() {
           }, 1000)
         }
         if (ev.type === "error") {
+          clearTimeoutWarnings()
           setStatus(`Error: ${ev.error}`)
           close()
           setBusy(false)
@@ -107,6 +143,7 @@ export default function PodcastGenerator() {
       })
 
       const timeout = setTimeout(() => {
+        clearTimeoutWarnings()
         setStatus("Error: Timeout - generation took too long")
         setBusy(false)
         close()
@@ -114,12 +151,14 @@ export default function PodcastGenerator() {
 
       const originalClose = close
       const closeWithCleanup = () => {
+        clearTimeoutWarnings()
         clearTimeout(timeout)
         originalClose()
       }
 
       return { close: closeWithCleanup }
     } catch (e: unknown) {
+      clearTimeoutWarnings()
       setStatus((e as Error).message || "Failed")
       setBusy(false)
     }
@@ -163,6 +202,11 @@ export default function PodcastGenerator() {
         {status && (
           <div className="p-4 rounded-xl bg-purple-950/40 border border-purple-800/40 text-purple-200 font-medium">
             {status}
+            {slowWarning && (
+              <div className="mt-2 text-yellow-200 text-sm">
+                This is taking longer than expected. Please wait...
+              </div>
+            )}
             <div className="text-xs mt-2 opacity-70">
               Audio file: {audioFile ? 'Set' : 'Not set'} |
               Busy: {busy ? 'Yes' : 'No'}

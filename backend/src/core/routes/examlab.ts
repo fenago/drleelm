@@ -3,6 +3,7 @@ import { emitToAll, emitLarge } from "../../utils/chat/ws"
 import { withTimeout } from "../../utils/quiz/promise"
 import { handleExam } from "../../services/examlab/generate"
 import { loadAllExams } from "../../services/examlab/loader"
+import { createJob, setJobRunning, setJobDone, setJobError, getJob } from "../../utils/jobs/status"
 
 const streams = new Map<string, Set<any>>()
 const log = (...a: any) => console.log("[exam]", ...a)
@@ -65,23 +66,43 @@ export function examRoutes(app: any) {
       const runId = crypto.randomUUID()
       res.status(202).send({ ok: true, runId, stream: `/ws/exams?runId=${runId}` })
 
+      createJob(runId)
       setImmediate(async () => {
         const s = streams.get(runId)
         try {
+          setJobRunning(runId)
           emitToAll(s, { type: "phase", value: "generating", examId })
           const payload = await withTimeout(handleExam(examId), 180000, "handleExam")
+          setJobDone(runId, { examId, payload })
           await emitLarge(s, "exam", { examId, payload }, { id: runId, chunkBytes: 128 * 1024, gzip: false })
           emitToAll(s, { type: "done" })
           log("single done", runId, examId)
         } catch (e: any) {
-          log("single err", runId, e?.message || e)
-          emitToAll(s, { type: "error", examId, error: e?.message || "failed" })
+          const errMsg = e?.message || "failed"
+          log("single err", runId, errMsg)
+          setJobError(runId, errMsg)
+          emitToAll(s, { type: "error", examId, error: errMsg })
         }
       })
     } catch (e: any) {
       log("500 single err", e?.message || e)
       res.status(500).send({ ok: false, error: e?.message || "internal" })
     }
+  })
+
+  app.get("/exam/:id/status", (req: any, res: any) => {
+    const id = req.params.id
+    const job = getJob(id)
+    if (!job) {
+      return res.status(404).send({ ok: false, error: "not found" })
+    }
+    res.send({
+      ok: true,
+      runId: id,
+      status: job.status,
+      result: job.status === "done" ? job.result : undefined,
+      error: job.status === "error" ? job.error : undefined
+    })
   })
 
   app.post("/exams", async (_req: any, res: any) => {

@@ -1,6 +1,7 @@
 import { handleQuiz } from "../../services/quiz";
 import { emitToAll } from "../../utils/chat/ws";
 import { withTimeout } from "../../utils/quiz/promise";
+import { createJob, setJobRunning, setJobDone, setJobError, getJob } from "../../utils/jobs/status";
 import crypto from "crypto";
 
 const qs = new Map<string, Set<any>>();
@@ -51,19 +52,24 @@ export function quizRoutes(app: any) {
         .status(202)
         .send({ ok: true, quizId, stream: `/ws/quiz?quizId=${quizId}` });
 
+      createJob(quizId);
       setImmediate(async () => {
         try {
+          setJobRunning(quizId);
           emitToAll(qs.get(quizId), { type: "phase", value: "generating" });
           const qz = await withTimeout(handleQuiz(topic), 60000, "handleQuiz");
           qlog("generated", quizId, Array.isArray(qz) ? qz.length : "n/a");
+          setJobDone(quizId, qz);
           emitToAll(qs.get(quizId), { type: "quiz", quiz: qz });
           emitToAll(qs.get(quizId), { type: "done" });
           qlog("done", quizId);
         } catch (e: any) {
-          qlog("error", quizId, e?.message || e);
+          const errMsg = e?.message || "failed";
+          qlog("error", quizId, errMsg);
+          setJobError(quizId, errMsg);
           emitToAll(qs.get(quizId), {
             type: "error",
-            error: e?.message || "failed",
+            error: errMsg,
           });
         }
       });
@@ -71,5 +77,21 @@ export function quizRoutes(app: any) {
       qlog("500 route err", e?.message || e);
       res.status(500).send({ ok: false, error: e?.message || "internal" });
     }
+  });
+
+  // Status endpoint for polling fallback
+  app.get("/quiz/:id/status", (req: any, res: any) => {
+    const id = req.params.id;
+    const job = getJob(id);
+    if (!job) {
+      return res.status(404).send({ ok: false, error: "not found" });
+    }
+    res.send({
+      ok: true,
+      quizId: id,
+      status: job.status,
+      quiz: job.status === "done" ? job.result : undefined,
+      error: job.status === "error" ? job.error : undefined
+    });
   });
 }

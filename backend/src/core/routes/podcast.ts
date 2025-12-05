@@ -3,6 +3,7 @@ import fs from "fs"
 import { makeScript, makeAudio } from "../../services/podcast"
 import { emitToAll } from "../../utils/chat/ws"
 import { config } from "../../config/env"
+import { createJob, setJobRunning, setJobDone, setJobError, getJob } from "../../utils/jobs/status"
 
 const sockets = new Map<string, Set<any>>()
 const pendingJobs = new Map<string, () => Promise<void>>()
@@ -73,8 +74,10 @@ export function podcastRoutes(app: any) {
 
       res.status(202).send({ ok: true, pid, stream: `/ws/podcast?pid=${pid}` })
 
+      createJob(pid)
       const job = async () => {
         try {
+          setJobRunning(pid)
           const script = await makeScript(topic, topic)
           emit(pid, { type: "script", data: script })
 
@@ -88,21 +91,24 @@ export function podcastRoutes(app: any) {
           const downloadUrl = `${config.baseUrl}/podcast/download/${pid}/${filename}`
           const rel = path.relative(process.cwd(), outPath).split(path.sep).join("/")
           const staticUrl = `${config.baseUrl}/${rel}`
-          
-          const audioMessage = { 
-            type: "audio", 
+
+          const audioMessage = {
+            type: "audio",
             file: downloadUrl,
             staticUrl: staticUrl,
             filename: filename,
           }
+          setJobDone(pid, audioMessage)
           emit(pid, audioMessage)
-          
+
           emit(pid, { type: "done" })
         } catch (e: any) {
-          emit(pid, { type: "error", error: e?.message || "failed" })
+          const errMsg = e?.message || "failed"
+          setJobError(pid, errMsg)
+          emit(pid, { type: "error", error: errMsg })
         }
       }
-      
+
       pendingJobs.set(pid, job)
       
       startJobIfReady(pid).catch(err => {
@@ -111,6 +117,21 @@ export function podcastRoutes(app: any) {
     } catch (e) {
       next(e)
     }
+  })
+
+  app.get("/podcast/:id/status", (req: any, res: any) => {
+    const id = req.params.id
+    const job = getJob(id)
+    if (!job) {
+      return res.status(404).send({ ok: false, error: "not found" })
+    }
+    res.send({
+      ok: true,
+      pid: id,
+      status: job.status,
+      result: job.status === "done" ? job.result : undefined,
+      error: job.status === "error" ? job.error : undefined
+    })
   })
 
   app.get("/podcast/download/:pid/:filename", async (req: any, res: any, next: any) => {
