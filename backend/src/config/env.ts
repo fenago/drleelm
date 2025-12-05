@@ -15,7 +15,7 @@ export const config = {
   provider: process.env.LLM_PROVIDER || 'gemini',
   embeddings_provider: process.env.EMB_PROVIDER || 'openai',
   openrouter: process.env.OPENROUTER_API_KEY || '',
-  openrouter_model: process.env.openrouter_model || '',
+  openrouter_model: process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash-lite',
   gemini: process.env.gemini || process.env.GOOGLE_API_KEY || '',
   gemini_model: process.env.gemini_model || 'gemini-2.5-flash-lite',
   gemini_embed_model: process.env.gemini_embed_model || 'text-embedding-004',

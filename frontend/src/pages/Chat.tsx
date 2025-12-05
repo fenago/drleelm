@@ -104,8 +104,14 @@ export default function Chat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const seenRef = useRef<Set<string>>(new Set());
   const answerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const awaitingAnswerRef = useRef<boolean>(false);
   const keyFor = (kind: BagItem["kind"], title: string, content: string) =>
     `${kind}:${title.trim().toLowerCase()}|${content.trim().toLowerCase()}`;
+
+  // Keep ref in sync with state for use in async callbacks
+  useEffect(() => {
+    awaitingAnswerRef.current = awaitingAnswer;
+  }, [awaitingAnswer]);
 
   useEffect(() => {
     if (!initialChatId && !initialQuestion) {
@@ -345,7 +351,7 @@ export default function Chat() {
     let attempts = 0;
 
     const doPoll = async () => {
-      if (!awaitingAnswer) return; // Already got answer via WebSocket
+      if (!awaitingAnswerRef.current) return; // Already got answer via WebSocket
 
       try {
         const res = await getChatDetail(targetChatId);
@@ -375,9 +381,9 @@ export default function Chat() {
       }
 
       attempts++;
-      if (attempts < maxAttempts && awaitingAnswer) {
+      if (attempts < maxAttempts && awaitingAnswerRef.current) {
         answerTimeoutRef.current = setTimeout(doPoll, pollInterval);
-      } else if (attempts >= maxAttempts && awaitingAnswer) {
+      } else if (attempts >= maxAttempts && awaitingAnswerRef.current) {
         // Give up after max attempts
         setAwaitingAnswer(false);
         setChatError("Request timed out. Please try again.");
