@@ -108,6 +108,7 @@ export default function Chat() {
   const answerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const awaitingAnswerRef = useRef<boolean>(false);
   const timeoutWarningRefs = useRef<{ t5?: ReturnType<typeof setTimeout>; t10?: ReturnType<typeof setTimeout> }>({});
+  const justCreatedChatRef = useRef<Set<string>>(new Set()); // Track chats we just created to skip getChatDetail
 
   function clearTimeoutWarnings() {
     if (timeoutWarningRefs.current.t5) clearTimeout(timeoutWarningRefs.current.t5);
@@ -169,6 +170,15 @@ export default function Chat() {
 
   useEffect(() => {
     if (!chatId) return;
+
+    // If this chat was just created by sendFollowup, skip the fetch - we already have the messages
+    if (justCreatedChatRef.current.has(chatId)) {
+      justCreatedChatRef.current.delete(chatId); // Clean up
+      setChatVerified(true);
+      setConnecting(false);
+      return;
+    }
+
     // Reset verification when chatId changes to prevent WebSocket connecting before verification
     setChatVerified(false);
     getChatDetail(chatId)
@@ -483,7 +493,11 @@ export default function Chat() {
     try {
       const r = await chatJSON({ q: text, chatId: chatId || undefined });
       const targetChatId = r?.chatId || chatId;
-      if (r?.chatId && r.chatId !== chatId) setChatId(r.chatId);
+      if (r?.chatId && r.chatId !== chatId) {
+        // Mark as "just created" so getChatDetail effect skips the fetch
+        justCreatedChatRef.current.add(r.chatId);
+        setChatId(r.chatId);
+      }
       // Start polling as a fallback in case WebSocket misses the answer
       if (targetChatId) pollForAnswer(targetChatId, currentUserMsgCount);
     } catch (e) {
