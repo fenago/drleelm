@@ -95,6 +95,7 @@ export default function Chat() {
   const [connecting, setConnecting] = useState<boolean>(!!(initialChatId || initialQuestion));
   const [awaitingAnswer, setAwaitingAnswer] = useState<boolean>(false);
   const [topic, setTopic] = useState<string>("");
+  const [chatError, setChatError] = useState<string | null>(null);
   const { setDocument } = useCompanion();
   const elapsedSeconds = useElapsedTimer(awaitingAnswer);
 
@@ -185,7 +186,12 @@ export default function Chat() {
     const wsUrl = (env.backend || window.location.origin).replace(/^http/, "ws") + `/ws/chat?chatId=${encodeURIComponent(chatId)}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
-    ws.onopen = () => setConnecting(false);
+
+    ws.onopen = () => {
+      setConnecting(false);
+      setChatError(null);
+    };
+
     ws.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data);
@@ -196,10 +202,35 @@ export default function Chat() {
           if (norm.topic) setTopic(norm.topic);
           else if (norm.md) setTopic((t) => t || deriveTopicFromMarkdown(norm.md));
           setAwaitingAnswer(false);
+          setChatError(null);
           setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 0);
+        } else if (m?.type === "done") {
+          // Safety net: ensure timer stops when backend signals completion
+          setAwaitingAnswer(false);
+        } else if (m?.type === "error") {
+          // Stop timer and show error when backend reports failure
+          setAwaitingAnswer(false);
+          setChatError(m.error || "Something went wrong. Please try again.");
         }
       } catch { }
     };
+
+    ws.onerror = () => {
+      setConnecting(false);
+      setAwaitingAnswer(false);
+      setChatError("Connection error. Please refresh and try again.");
+    };
+
+    ws.onclose = (ev) => {
+      // If connection closes unexpectedly while awaiting, stop the timer
+      if (ev.code !== 1000) {
+        setAwaitingAnswer(false);
+        if (!ev.wasClean) {
+          setChatError("Connection lost. Please refresh the page.");
+        }
+      }
+    };
+
     return () => { try { ws.close(); } catch { } wsRef.current = null; };
   }, [chatId]);
 
@@ -282,6 +313,7 @@ export default function Chat() {
   const sendFollowup = async (q: string) => {
     const text = q.trim();
     if (!text || busy) return;
+    setChatError(null);
     setMessages((prev) => ([...(Array.isArray(prev) ? prev : []), { role: "user", content: text, at: Date.now() }]));
     setAwaitingAnswer(true);
     setBusy(true);
@@ -355,6 +387,18 @@ export default function Chat() {
                     label={connecting ? "Connecting…" : "Thinking…"}
                     elapsedSeconds={awaitingAnswer ? elapsedSeconds : undefined}
                   />
+                </div>
+              )}
+              {chatError && !awaitingAnswer && (
+                <div className="w-full flex justify-start">
+                  <div className="w-full max-w-4xl rounded-2xl p-4 border border-red-900/50 bg-red-950/30">
+                    <div className="flex items-center gap-3 text-red-400">
+                      <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <span>{chatError}</span>
+                    </div>
+                  </div>
                 </div>
               )}
               <div ref={scrollRef} />
