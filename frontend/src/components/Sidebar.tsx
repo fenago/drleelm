@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { getChats } from "../lib/api";
+import { env } from "../config/env";
+
+// Frontend version from package.json (injected at build time via Vite)
+const FRONTEND_VERSION = '1.0.2'
 
 interface Chat {
   id: string;
@@ -11,15 +15,27 @@ interface ChatsResponse {
   chats: Chat[];
 }
 
+interface BackendInfo {
+  version: string;
+  provider: string;
+  model: string;
+}
+
 export default function Sidebar() {
   const location = useLocation()
   const p = location.pathname
   const [isOpen, setIsOpen] = useState(false)
   const [chats, setChats] = useState<ChatsResponse | null>(null);
+  const [backendInfo, setBackendInfo] = useState<BackendInfo | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getChats().then(data => setChats(data));
+    // Fetch backend version info
+    fetch(`${env.backend}/api/version`)
+      .then(res => res.json())
+      .then(data => setBackendInfo(data))
+      .catch(() => setBackendInfo(null));
   }, []);
 
   // Close sidebar when route changes
@@ -61,7 +77,13 @@ export default function Sidebar() {
         ))}
       </div>
       <div className={`md:w-20 md:order-1 h-full rounded-3xl bg-stone-950/50 backdrop-blur-xl border border-stone-900 text-stone-400 flex flex-col items-center justify-between py-4 ${isOpen ? 'md:rounded-r-none' : ''}`}>
-        <img src='/logo.png' alt='logo' className='w-10 h-auto rounded-full hidden md:block' />
+        <div className='hidden md:flex flex-col items-center'>
+          <img src='/logo.png' alt='logo' className='w-10 h-auto rounded-full' />
+          <div className='text-[9px] text-stone-600 mt-1 text-center'>
+            <div>FE: v{FRONTEND_VERSION}</div>
+            <div>BE: v{backendInfo?.version || '...'}</div>
+          </div>
+        </div>
         <nav className='flex md:flex-col items-center space-x-4 md:space-x-0 md:space-y-2 my-auto'>
           <Link to='/' className={b('/')}>
             <svg className="size-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" clipRule="evenodd" d="M6.29367 4.96556C3.62685 6.90311 2.29344 7.87189 1.76974 9.30291C1.72773 9.41771 1.68994 9.534 1.65645 9.65157C1.23901 11.1171 1.74832 12.6846 2.76696 15.8197C3.78559 18.9547 4.2949 20.5222 5.49405 21.4625C5.59025 21.5379 5.68918 21.6098 5.79064 21.678C7.05546 22.5279 8.70364 22.5279 12 22.5279C15.2964 22.5279 16.9446 22.5279 18.2094 21.678C18.3108 21.6098 18.4098 21.5379 18.506 21.4625C19.7051 20.5222 20.2144 18.9547 21.2331 15.8197C22.2517 12.6846 22.761 11.1171 22.3436 9.65157C22.3101 9.534 22.2723 9.41771 22.2303 9.30291C21.7066 7.87189 20.3732 6.90312 17.7064 4.96557C15.0395 3.02801 13.7061 2.05923 12.1833 2.00336C12.0611 1.99888 11.9389 1.99888 11.8167 2.00336C10.2939 2.05923 8.96048 3.02801 6.29367 4.96556ZM10 17.0697C9.58579 17.0697 9.25 17.4054 9.25 17.8197C9.25 18.2339 9.58579 18.5697 10 18.5697H14C14.4142 18.5697 14.75 18.2339 14.75 17.8197C14.75 17.4054 14.4142 17.0697 14 17.0697H10Z" fill="currentColor" /></svg>
@@ -101,7 +123,17 @@ export default function Sidebar() {
           <Link to='/cards' className={b('/cards')}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fillRule="evenodd" clipRule="evenodd" d="M5.24472 6.45492C5 7.20808 5 8.13872 5 10V17.3874C5 19.3045 5 20.2631 5.34196 20.77C5.75971 21.3893 6.48778 21.7242 7.22986 21.6383C7.8373 21.568 8.56509 20.9442 10.0207 19.6966C10.6614 19.1474 10.9818 18.8728 11.3337 18.7484C11.7648 18.5961 12.2352 18.5961 12.6663 18.7484C13.0182 18.8728 13.3386 19.1474 13.9793 19.6965C15.4349 20.9442 16.1627 21.568 16.7701 21.6383C17.5122 21.7242 18.2403 21.3893 18.658 20.77C19 20.2631 19 19.3045 19 17.3874V10C19 8.13872 19 7.20808 18.7553 6.45492C18.2607 4.93273 17.0673 3.73931 15.5451 3.24472C14.7919 3 13.8613 3 12 3C10.1387 3 9.20808 3 8.45492 3.24472C6.93273 3.73931 5.73931 4.93273 5.24472 6.45492ZM12 5.25C11.5858 5.25 11.25 5.58579 11.25 6C11.25 6.41421 11.5858 6.75 12 6.75C13.7949 6.75 15.25 8.20507 15.25 10C15.25 10.4142 15.5858 10.75 16 10.75C16.4142 10.75 16.75 10.4142 16.75 10C16.75 7.37665 14.6234 5.25 12 5.25Z" fill="currentColor" /></svg>
           </Link>
+          <Link to='/settings' className={b('/settings')}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-6">
+              <path fillRule="evenodd" d="M11.078 2.25c-.917 0-1.699.663-1.85 1.567L9.05 4.889c-.02.12-.115.26-.297.348a7.493 7.493 0 0 0-.986.57c-.166.115-.334.126-.45.083L6.3 5.508a1.875 1.875 0 0 0-2.282.819l-.922 1.597a1.875 1.875 0 0 0 .432 2.385l.84.692c.095.078.17.229.154.43a7.598 7.598 0 0 0 0 1.139c.015.2-.059.352-.153.43l-.841.692a1.875 1.875 0 0 0-.432 2.385l.922 1.597a1.875 1.875 0 0 0 2.282.818l1.019-.382c.115-.043.283-.031.45.082.312.214.641.405.985.57.182.088.277.228.297.35l.178 1.071c.151.904.933 1.567 1.85 1.567h1.844c.916 0 1.699-.663 1.85-1.567l.178-1.072c.02-.12.114-.26.297-.349.344-.165.673-.356.985-.57.167-.114.335-.125.45-.082l1.02.382a1.875 1.875 0 0 0 2.28-.819l.923-1.597a1.875 1.875 0 0 0-.432-2.385l-.84-.692c-.095-.078-.17-.229-.154-.43a7.614 7.614 0 0 0 0-1.139c-.016-.2.059-.352.153-.43l.84-.692c.708-.582.891-1.59.433-2.385l-.922-1.597a1.875 1.875 0 0 0-2.282-.818l-1.02.382c-.114.043-.282.031-.449-.083a7.49 7.49 0 0 0-.985-.57c-.183-.087-.277-.227-.297-.348l-.179-1.072a1.875 1.875 0 0 0-1.85-1.567h-1.843ZM12 15.75a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5Z" clipRule="evenodd" />
+            </svg>
+          </Link>
         </nav>
+        {backendInfo && (
+          <div className='hidden md:flex flex-col items-center text-[9px] text-stone-600 space-y-0.5'>
+            <span>{backendInfo.provider}/{backendInfo.model?.split('-').slice(0,2).join('-')}</span>
+          </div>
+        )}
       </div>
     </aside>
   )

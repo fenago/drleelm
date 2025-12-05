@@ -7,6 +7,9 @@ const allowedRoots = [
   path.resolve(process.cwd(), "assets")
 ]
 
+// Track active companion WebSocket connections
+const companionSockets = new Map<string, Set<any>>()
+
 const MAX_BYTES = 1.5 * 1024 * 1024 // 1.5MB guardrail for text reads
 
 type CompanionHistory = { role: string; content: unknown }
@@ -72,6 +75,128 @@ Favor concise, actionable study guidance grounded in the provided material.
 }
 
 export function companionRoutes(app: any) {
+  // WebSocket endpoint for streaming companion responses
+  app.ws("/ws/companion", (ws: any, req: any) => {
+    const url = new URL(req.url, "http://localhost")
+    const sessionId = url.searchParams.get("sessionId")
+    if (!sessionId) {
+      return ws.close(1008, "sessionId required")
+    }
+
+    let set = companionSockets.get(sessionId)
+    if (!set) {
+      set = new Set()
+      companionSockets.set(sessionId, set)
+    }
+    set.add(ws)
+
+    ws.on("close", () => {
+      set!.delete(ws)
+      if (set!.size === 0) companionSockets.delete(sessionId)
+    })
+
+    ws.send(JSON.stringify({ type: "ready", sessionId }))
+  })
+
+  // Streaming companion endpoint that returns immediately and streams via WebSocket
+  app.post("/api/companion/stream", async (req: any, res: any) => {
+    const requestStart = Date.now()
+    const elapsed = () => `${((Date.now() - requestStart) / 1000).toFixed(2)}s`
+
+    console.log(`[companion] /api/companion/stream called at ${new Date().toISOString()}`)
+    try {
+      const body = req.body || {}
+      const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : ""
+      if (!sessionId) return res.status(400).send({ error: "sessionId required" })
+
+      const question = typeof body.question === "string" ? body.question.trim() : ""
+      if (!question) return res.status(400).send({ error: "question required" })
+
+      const history = Array.isArray(body.history) ? (body.history as CompanionHistory[]) : undefined
+      const documentTitle = typeof body.documentTitle === "string" ? body.documentTitle.trim() : ""
+
+      let contextText = ""
+      let filename: string | undefined
+
+      if (typeof body.documentText === "string" && body.documentText.trim()) {
+        contextText = body.documentText
+        console.log(`[companion] [${elapsed()}] Using provided documentText (${contextText.length} chars)`)
+      } else if (typeof body.filePath === "string" && body.filePath.trim()) {
+        const resolved = resolveDocumentPath(body.filePath)
+        if (!resolved) return res.status(404).send({ error: "document not found or not accessible" })
+        filename = path.basename(resolved)
+        try {
+          contextText = await readDocumentText(resolved)
+          console.log(`[companion] [${elapsed()}] Read file ${filename} (${contextText.length} chars)`)
+        } catch (err: any) {
+          const msg = err?.message || "unable to read document"
+          return res.status(400).send({ error: msg })
+        }
+      } else {
+        return res.status(400).send({ error: "documentText or filePath required" })
+      }
+
+      if (!contextText.trim()) {
+        return res.status(400).send({ error: "document is empty" })
+      }
+
+      // Return immediately - streaming happens via WebSocket
+      res.status(202).json({
+        ok: true,
+        message: "Request received, streaming response via WebSocket",
+        sessionId,
+        stream: `/ws/companion?sessionId=${sessionId}`
+      })
+
+      // Get WebSocket connections for this session
+      const sockets = companionSockets.get(sessionId)
+      if (!sockets || sockets.size === 0) {
+        console.warn(`[companion] No active WebSocket connections for session ${sessionId}`)
+        return
+      }
+
+      const emitToSession = (data: any) => {
+        sockets.forEach((ws) => {
+          try {
+            ws.send(JSON.stringify(data))
+          } catch (err) {
+            console.error("[companion] Error sending to WebSocket:", err)
+          }
+        })
+      }
+
+      emitToSession({ type: "thinking" })
+
+      try {
+        console.log(`[companion] [${elapsed()}] Starting streaming LLM call`)
+        const prompt = buildCompanionPrompt(filename || documentTitle)
+        const llmStart = Date.now()
+
+        const answer = await askWithContext({
+          question,
+          context: contextText,
+          topic: typeof body.topic === "string" && body.topic.trim() ? body.topic.trim() : undefined,
+          history,
+          systemPrompt: prompt,
+          cacheScope: "companion"
+        })
+
+        const llmTime = ((Date.now() - llmStart) / 1000).toFixed(2)
+        console.log(`[companion] [${elapsed()}] LLM call completed in ${llmTime}s`)
+
+        // Send the complete answer
+        emitToSession({ type: "answer", companion: answer })
+        emitToSession({ type: "done" })
+      } catch (err: any) {
+        console.error(`[companion] [${elapsed()}] ERROR:`, err?.message || err)
+        emitToSession({ type: "error", error: err?.message || "Failed to generate response" })
+      }
+    } catch (err: any) {
+      console.error(`[companion] [${elapsed()}] ERROR:`, err?.message || err)
+      res.status(500).send({ error: "failed to process companion request" })
+    }
+  })
+
   app.post("/api/companion/ask", async (req: any, res: any) => {
     const requestStart = Date.now()
     const elapsed = () => `${((Date.now() - requestStart) / 1000).toFixed(2)}s`

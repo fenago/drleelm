@@ -8,6 +8,7 @@ import { transcriberRoutes } from "./routes/transcriber";
 import { plannerRoutes } from "./routes/planner";
 import { debateRoutes } from "./routes/debate";
 import { companionRoutes } from "./routes/companion";
+import { settingsRoutes } from "./routes/settings";
 
 export function registerRoutes(app: any) {
   chatRoutes(app);
@@ -20,4 +21,5 @@ export function registerRoutes(app: any) {
   plannerRoutes(app);
   debateRoutes(app);
   companionRoutes(app);
+  settingsRoutes(app);
 }

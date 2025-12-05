@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { companionAsk, type FlashCard } from "../../lib/api"
+import { companionAskStream, type FlashCard, type CompanionEvent } from "../../lib/api"
 import MarkdownView from "../Chat/MarkdownView"
 import { useCompanion } from "./CompanionProvider"
 
@@ -102,15 +102,21 @@ export default function CompanionDock() {
     setError(null)
 
     try {
-      const response = await companionAsk({
+      // Use streaming API to bypass DigitalOcean's 10-second timeout
+      const payload = await companionAskStream({
         question,
         filePath: document?.filePath,
         documentTitle: document?.title,
         documentText: document?.text,
         topic: document?.title,
-        history
+        history,
+        onEvent: (ev: CompanionEvent) => {
+          // Can optionally show status updates here
+          if (ev.type === "thinking") {
+            console.log("[CompanionDock] AI is thinking...")
+          }
+        }
       })
-      const payload = response?.companion
       const assistantContent = payload?.answer || "I couldn't generate a response from the provided context."
       const assistantMessage: CompanionMessage = {
         id: makeId(),

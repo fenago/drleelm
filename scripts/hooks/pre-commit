@@ -1,0 +1,41 @@
+#!/bin/bash
+# Auto-bump version based on what files changed
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Get list of staged files
+STAGED_FILES=$(git diff --cached --name-only)
+
+# Check if frontend or backend files changed
+FE_CHANGED=false
+BE_CHANGED=false
+
+for file in $STAGED_FILES; do
+  # Skip version files themselves to avoid infinite loop
+  if [[ "$file" == "package.json" || "$file" == "frontend/package.json" || "$file" == "frontend/src/components/Sidebar.tsx" ]]; then
+    continue
+  fi
+
+  if [[ "$file" == frontend/* ]]; then
+    FE_CHANGED=true
+  elif [[ "$file" == backend/* || "$file" == "nodemon.json" ]]; then
+    BE_CHANGED=true
+  fi
+done
+
+# Determine what to bump
+if $FE_CHANGED && $BE_CHANGED; then
+  echo "Changes in both frontend and backend - bumping both versions"
+  node scripts/bump-version.mjs both
+  git add package.json frontend/package.json frontend/src/components/Sidebar.tsx
+elif $FE_CHANGED; then
+  echo "Frontend-only changes - bumping frontend version"
+  node scripts/bump-version.mjs fe
+  git add frontend/package.json frontend/src/components/Sidebar.tsx
+elif $BE_CHANGED; then
+  echo "Backend-only changes - bumping backend version"
+  node scripts/bump-version.mjs be
+  git add package.json
+else
+  echo "No frontend/backend code changes detected - skipping version bump"
+fi

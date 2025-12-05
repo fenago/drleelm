@@ -10,6 +10,7 @@ import ExamLabs from "./pages/examlab.tsx";
 import NotFound from './pages/404.tsx'
 import PlannerPage from './pages/Planner'
 import Debate from './pages/Debate'
+import Settings from './pages/Settings'
 import "./index.css"
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
@@ -25,6 +26,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Route path="debate" element={<Debate />} />
         <Route path="cards" element={<FlashCards />} />
         <Route path="exam" element={<ExamLabs />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>
   </BrowserRouter>

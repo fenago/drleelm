@@ -1,9 +1,14 @@
 {
   "name": "drleelm",
+  "version": "1.0.2",
   "scripts": {
     "dev": "nodemon",
     "build": "tsc -p backend/tsconfig.json",
-    "start": "node backend/dist/src/core/index.js"
+    "start": "node backend/dist/src/core/index.js",
+    "version:bump": "node scripts/bump-version.mjs",
+    "version:fe": "node scripts/bump-version.mjs fe",
+    "version:be": "node scripts/bump-version.mjs be",
+    "postinstall": "cp scripts/hooks/pre-commit .git/hooks/pre-commit 2>/dev/null && chmod +x .git/hooks/pre-commit 2>/dev/null || true"
   },
   "authors": [
     "nullure (https://github.com/nullure)",

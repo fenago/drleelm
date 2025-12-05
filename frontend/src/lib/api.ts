@@ -182,6 +182,117 @@ export async function chatAskOnce(opts: {
   return { chatId: start.chatId, answer, flashcards };
 }
 
+export type CompanionEvent =
+  | { type: "ready"; sessionId: string }
+  | { type: "thinking" }
+  | { type: "answer"; companion: CompanionAnswer }
+  | { type: "done" }
+  | { type: "error"; error: string };
+
+export function connectCompanionStream(sessionId: string, onEvent: (ev: CompanionEvent) => void) {
+  const url = wsURL(`/ws/companion?sessionId=${encodeURIComponent(sessionId)}`);
+  const ws = new WebSocket(url);
+  ws.onmessage = (m) => {
+    try {
+      onEvent(JSON.parse(m.data as string) as CompanionEvent);
+    } catch { }
+  };
+  ws.onerror = () => onEvent({ type: "error", error: "stream_error" });
+  return { ws, close: () => { try { ws.close(); } catch { } } };
+}
+
+export async function companionAskStream(input: {
+  question: string;
+  filePath?: string;
+  documentText?: string;
+  documentTitle?: string;
+  topic?: string;
+  history?: CompanionHistoryEntry[];
+  onEvent?: (ev: CompanionEvent) => void;
+}): Promise<CompanionAnswer> {
+  const question = (input.question || "").trim();
+  if (!question) throw new Error("Question is required");
+
+  // Generate a unique session ID
+  const sessionId = `companion_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  const startTime = performance.now();
+  console.log(`[companionAskStream] Starting streaming request, sessionId: ${sessionId}`);
+
+  return new Promise((resolve, reject) => {
+    // First, establish WebSocket connection
+    const { ws, close } = connectCompanionStream(sessionId, (ev) => {
+      input.onEvent?.(ev);
+
+      if (ev.type === "ready") {
+        // WebSocket ready, now send the HTTP request
+        const payload: Record<string, unknown> = { question, sessionId };
+        if (input.filePath) payload.filePath = input.filePath;
+        if (input.documentText) payload.documentText = input.documentText;
+        if (input.documentTitle) payload.documentTitle = input.documentTitle;
+        if (input.topic) payload.topic = input.topic;
+        if (input.history && input.history.length) {
+          payload.history = input.history.map((h) => ({ role: h.role, content: h.content }));
+        }
+
+        fetch(`${env.backend}/api/companion/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }).then(res => {
+          if (!res.ok) {
+            res.text().then(txt => {
+              console.error(`[companionAskStream] HTTP error: ${res.status}`, txt);
+              close();
+              reject(new Error(`HTTP ${res.status}: ${txt || res.statusText}`));
+            });
+          }
+        }).catch(err => {
+          console.error(`[companionAskStream] Fetch error:`, err);
+          close();
+          reject(err);
+        });
+      }
+
+      if (ev.type === "answer") {
+        const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+        console.log(`[companionAskStream] Received answer after ${elapsed}s`);
+      }
+
+      if (ev.type === "done") {
+        close();
+      }
+
+      if (ev.type === "error") {
+        const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+        console.error(`[companionAskStream] Error after ${elapsed}s:`, ev.error);
+        close();
+        reject(new Error(ev.error));
+      }
+    });
+
+    // Store answer to resolve when done
+    let answer: CompanionAnswer | null = null;
+
+    const originalOnEvent = input.onEvent;
+    input.onEvent = (ev) => {
+      originalOnEvent?.(ev);
+      if (ev.type === "answer") {
+        answer = ev.companion;
+      }
+      if (ev.type === "done" && answer) {
+        resolve(answer);
+      }
+    };
+
+    // Timeout after 2 minutes
+    setTimeout(() => {
+      close();
+      reject(new Error("Companion request timed out"));
+    }, 120000);
+  });
+}
+
 export async function companionAsk(input: {
   question: string;
   filePath?: string;
