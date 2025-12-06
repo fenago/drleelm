@@ -4,7 +4,7 @@ import { getChats } from "../lib/api";
 import { env } from "../config/env";
 
 // Frontend version from package.json (injected at build time via Vite)
-const FRONTEND_VERSION = '1.0.11'
+const FRONTEND_VERSION = '1.0.12'
 
 interface Chat {
   id: string;
@@ -130,7 +130,7 @@ export default function Sidebar() {
           </Link>
         </nav>
         {backendInfo && (
-          <div className='hidden md:flex flex-col items-center text-[9px] text-stone-600 space-y-0.5'>
+          <div className='hidden md:flex flex-col items-center text-[9px] text-stone-500 space-y-0.5'>
             <span>{backendInfo.provider}/{backendInfo.model?.split('-').slice(0,2).join('-')}</span>
           </div>
         )}

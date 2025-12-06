@@ -12,6 +12,11 @@ import { settingsRoutes } from "./routes/settings";
 import { modelsRoutes } from "./routes/models";
 
 export function registerRoutes(app: any) {
+  // Health check endpoint - simple ping to verify backend is running
+  app.get("/health", (_req: any, res: any) => {
+    res.send({ ok: true, status: "up", timestamp: Date.now() });
+  });
+
   chatRoutes(app);
   quizRoutes(app);
   examRoutes(app);
