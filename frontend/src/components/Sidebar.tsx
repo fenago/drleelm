@@ -4,7 +4,7 @@ import { getChats } from "../lib/api";
 import { env } from "../config/env";
 
 // Frontend version from package.json (injected at build time via Vite)
-const FRONTEND_VERSION = '1.0.12'
+const FRONTEND_VERSION = '1.0.13'
 
 interface Chat {
   id: string;
@@ -78,10 +78,10 @@ export default function Sidebar() {
       </div>
       <div className={`md:w-20 md:order-1 h-full rounded-3xl bg-stone-950/50 backdrop-blur-xl border border-stone-900 text-stone-400 flex flex-col items-center justify-between py-4 ${isOpen ? 'md:rounded-r-none' : ''}`}>
         <div className='hidden md:flex flex-col items-center'>
-          <img src='/logo.png' alt='logo' className='w-10 h-auto rounded-full' />
-          <div className='text-[9px] text-stone-600 mt-1 text-center'>
-            <div>FE: v{FRONTEND_VERSION}</div>
-            <div>BE: v{backendInfo?.version || '...'}</div>
+          <img src='/logo.png' alt='DrLeeLM logo' className='w-10 h-auto rounded-full' />
+          <span className='text-[10px] font-semibold text-white mt-1'>DrLeeLM</span>
+          <div className='text-[8px] text-stone-600 text-center'>
+            <div>v{FRONTEND_VERSION}</div>
           </div>
         </div>
         <nav className='flex md:flex-col items-center space-x-4 md:space-x-0 md:space-y-2 my-auto'>

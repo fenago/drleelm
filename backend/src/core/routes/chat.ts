@@ -8,6 +8,7 @@ import {
   getMsgs,
 } from "../../utils/chat/chat";
 import { emitToAll } from "../../utils/chat/ws";
+import { getRagDocuments } from "../../utils/database/db";
 
 type UpFile = { path: string; filename: string; mimeType: string };
 
@@ -165,5 +166,30 @@ export function chatRoutes(app: any) {
     }
     const messages = await getMsgs(id);
     res.send({ ok: true, chat, messages });
+  });
+
+  // RAG viewer endpoint - see what documents are in the RAG for a chat
+  app.get("/chats/:id/rag", async (req: any, res: any) => {
+    const id = req.params.id;
+    const chat = await getChat(id);
+    if (!chat) {
+      return res.status(404).send({ error: "chat not found" });
+    }
+    const collection = `chat:${id}`;
+    const documents = getRagDocuments(collection);
+    res.send({
+      ok: true,
+      chatId: id,
+      collection,
+      documentCount: documents.length,
+      documents: documents.map((d, i) => ({
+        index: i,
+        contentLength: d.pageContent.length,
+        contentPreview: d.pageContent.slice(0, 500) + (d.pageContent.length > 500 ? "..." : ""),
+        metadata: d.metadata,
+      })),
+      // Also include full content in case needed
+      fullDocuments: documents,
+    });
   });
 }

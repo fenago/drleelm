@@ -50,10 +50,12 @@ export async function handleUpload(a: { filePath: string; filename?: string; con
   if (!txt?.trim()) throw new Error('No valid content extracted from file.')
   const out = `${fp}.txt`
   fs.writeFileSync(out, txt)
+  // Note: _emb is created but not used - embedTextFromFile uses makeModels() internally
+  // Keeping for backwards compatibility but fixing hardcoded values
   const isO = process.env.LLM_PROVIDER === 'ollama'
   const _emb = isO
-    ? new OllamaEmbeddings({ model: process.env.OLLAMA_MODEL || 'llama3' })
-    : new OpenAIEmbeddings({ model: 'text-embedding-3-small', openAIApiKey: process.env.OPENROUTER_API_KEY, configuration: { baseURL: 'https://openrouter.ai/api/v1' } })
+    ? new OllamaEmbeddings({ model: process.env.OLLAMA_MODEL || 'llama4' })
+    : new OpenAIEmbeddings({ model: process.env.OPENAI_EMBED_MODEL || 'text-embedding-3-small', openAIApiKey: process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY, configuration: process.env.OPENAI_API_KEY ? undefined : { baseURL: 'https://openrouter.ai/api/v1' } })
   await embedTextFromFile(out, ns)
   return { stored: out }
 }

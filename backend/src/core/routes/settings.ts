@@ -155,7 +155,7 @@ export const settingsSchema = {
   // Ollama (Local)
   OLLAMA_MODEL: {
     label: 'Ollama Model',
-    description: 'Local model name (e.g., llama3, mistral, codellama)',
+    description: 'Local model name (e.g., llama4, mistral, codellama)',
     type: 'text',
     default: 'llama4',
     category: 'Ollama',

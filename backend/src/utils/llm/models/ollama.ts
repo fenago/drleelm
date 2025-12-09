@@ -4,7 +4,7 @@ import type { MkLLM, MkEmb, EmbeddingsLike } from './types'
 
 export const makeLLM: MkLLM = (cfg: any) => {
   const m = new ChatOllama({
-    model: cfg.ollama?.model || 'llama3',
+    model: cfg.ollama?.model || 'llama4',
     baseUrl: cfg.ollama?.baseUrl || 'http://localhost:11434',
     temperature: cfg.temp ?? 0.7,
   })
@@ -13,7 +13,7 @@ export const makeLLM: MkLLM = (cfg: any) => {
 
 export const makeEmbeddings: MkEmb = (cfg: any): EmbeddingsLike => {
   return new OllamaEmbeddings({
-    model: cfg.ollama?.embedModel || cfg.ollama?.model || 'llama3',
+    model: cfg.ollama?.embedModel || cfg.ollama?.model || 'llama4',
     baseUrl: cfg.ollama?.baseUrl || 'http://localhost:11434',
   })
 }

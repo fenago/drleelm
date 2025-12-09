@@ -1,19 +1,37 @@
 import path from 'path'
 import fs from 'fs'
 
-// Only load .env file if it exists (for local development)
-// In production (DO App Platform, etc.), env vars are injected directly
+// Load .env file and OVERRIDE existing shell environment variables
+// This ensures .env takes precedence over any stale shell exports
 const envPath = path.resolve(process.cwd(), '.env')
 if (fs.existsSync(envPath)) {
-  process.loadEnvFile(envPath)
+  const envContent = fs.readFileSync(envPath, 'utf-8')
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim()
+    // Skip empty lines, comments, and section headers
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eqIdx = trimmed.indexOf('=')
+    if (eqIdx === -1) continue
+    const key = trimmed.slice(0, eqIdx).trim()
+    let value = trimmed.slice(eqIdx + 1).trim()
+    // Remove surrounding quotes if present
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    // Force override existing env vars with .env values
+    process.env[key] = value
+  }
+  console.log('[env] Loaded .env file with override')
 }
 
 export const config = {
   db_mode: process.env.db_mode || 'json',
+  chroma_url: process.env.CHROMA_URL || 'http://localhost:8000',
   url: process.env.VITE_BACKEND_URL || '',
   timeout: Number(process.env.VITE_TIMEOUT || 90000),
   provider: process.env.LLM_PROVIDER || 'gemini',
-  embeddings_provider: process.env.EMB_PROVIDER || 'openai',
+  embeddings_provider: process.env.EMB_PROVIDER || '',  // Empty = smart selection in makeModels()
   openrouter: process.env.OPENROUTER_API_KEY || '',
   openrouter_model: process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash-lite',
   gemini: process.env.gemini || process.env.GOOGLE_API_KEY || '',

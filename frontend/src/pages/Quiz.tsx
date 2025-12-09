@@ -161,7 +161,10 @@ export default function Quiz() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
               </svg>
             </Link>
-            <h1 className="text-2xl font-semibold text-white flex items-center gap-3">Quiz</h1>
+            <div>
+              <h1 className="text-2xl font-semibold text-white">Quiz</h1>
+              <span className="text-xs text-stone-500">DrLeeLM</span>
+            </div>
           </div>
           <div className="px-3 py-1 rounded-full bg-gradient-to-r from-sky-500/20 to-blue-500/20 border border-sky-500/30 text-sky-300 text-xs font-medium">
             BETA

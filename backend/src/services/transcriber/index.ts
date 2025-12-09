@@ -267,7 +267,7 @@ Please provide a JSON response with the following structure:
 Make it educational and useful for studying. Focus on extracting the most important information for learning purposes.`;
 
         const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: config.openai_model || 'gpt-4o-mini',
             messages: [
                 {
                     role: 'system',

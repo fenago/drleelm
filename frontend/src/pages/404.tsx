@@ -83,8 +83,8 @@ export default function NotFound() {
         </div>
         
         <div className="mt-16 opacity-60">
-          <p className="text-gray-500 text-sm font-light italic tracking-wide">
-            "Every mistake is a learning opportunity"
+          <p className="text-gray-500 text-sm font-light tracking-wide">
+            DrLeeLM - Your AI Learning Companion
           </p>
         </div>
       </div>

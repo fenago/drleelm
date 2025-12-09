@@ -4,6 +4,19 @@ import { spawn } from 'child_process'
 import { EdgeTTS } from 'node-edge-tts'
 import { config } from '../../config/env'
 
+// Try to use ffmpeg-static if available, fallback to system ffmpeg
+let ffmpegPath = config.ffmpeg || 'ffmpeg'
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ffmpegStatic = require('ffmpeg-static')
+  if (ffmpegStatic && typeof ffmpegStatic === 'string') {
+    ffmpegPath = ffmpegStatic
+    console.log('[TTS] Using ffmpeg-static:', ffmpegPath)
+  }
+} catch {
+  console.log('[TTS] ffmpeg-static not found, using system ffmpeg:', ffmpegPath)
+}
+
 export type TSeg = { text: string; voice?: string }
 export type TSay = (segs: TSeg[], dir: string, base: string, emit?: (m: any) => void) => Promise<string>
 
@@ -12,8 +25,8 @@ function ff(dir: string, parts: string[], out: string, emit?: (m: any) => void) 
     const list = path.join(dir, 'list.txt')
     const listContent = parts.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n')
     fs.writeFileSync(list, listContent)
-    
-    const bin = config.ffmpeg || 'ffmpeg'
+
+    const bin = ffmpegPath
     
     const p = spawn(bin, ['-y', '-f', 'concat', '-safe', '0', '-i', list, '-c:a', 'libmp3lame', '-b:a', '192k', out], { stdio: 'pipe' })
     

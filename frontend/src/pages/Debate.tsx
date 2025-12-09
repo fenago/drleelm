@@ -349,6 +349,7 @@ export default function Debate() {
                         <p className="text-lg text-stone-400">
                             Challenge AI in a structured debate on any topic
                         </p>
+                        <span className="text-xs text-stone-500">DrLeeLM</span>
                     </div>
 
                     <div className="bg-stone-950/90 backdrop-blur-sm border border-stone-900 rounded-2xl p-8 space-y-6">

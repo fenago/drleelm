@@ -23,23 +23,48 @@ function pick(p: string) {
 
 export function makeModels(): Pair {
   console.log("[makeModels] LLM_PROVIDER:", config.provider)
-  console.log("[makeModels] EMB_PROVIDER:", config.embeddings_provider)
+  console.log("[makeModels] EMB_PROVIDER (from env):", process.env.EMB_PROVIDER || "(not set)")
   const mod = pick(config.provider)
   const llm = mod.makeLLM(config)
 
-  // Use explicit EMB_PROVIDER if set, otherwise try LLM provider's embeddings
+  // Smart embedding provider selection:
+  // 1. If EMB_PROVIDER is explicitly set in env, use it
+  // 2. If OpenAI key exists, use OpenAI embeddings (best quality)
+  // 3. Fallback to Gemini (free, good quality)
   let embeddings: EmbeddingsLike
-  const embProvider = config.embeddings_provider
-  if (embProvider && embProvider !== config.provider) {
-    const embMod = pick(embProvider)
-    embeddings = embMod.makeEmbeddings(config)
+  let effectiveEmbProvider: string
+
+  const explicitEmbProvider = process.env.EMB_PROVIDER
+  const hasOpenAIKey = !!(config.openai || config.openai_embed)
+  const hasGeminiKey = !!config.gemini
+
+  if (explicitEmbProvider) {
+    // User explicitly set EMB_PROVIDER
+    effectiveEmbProvider = explicitEmbProvider
+    console.log(`[makeModels] Using explicit EMB_PROVIDER: ${effectiveEmbProvider}`)
+  } else if (hasOpenAIKey) {
+    // OpenAI key available, use OpenAI embeddings
+    effectiveEmbProvider = 'openai'
+    console.log("[makeModels] OPENAI_API_KEY found, using OpenAI embeddings")
+  } else if (hasGeminiKey) {
+    // Fallback to Gemini (free tier available)
+    effectiveEmbProvider = 'gemini'
+    console.log("[makeModels] No OPENAI_API_KEY, using Gemini embeddings (free)")
   } else {
-    try {
-      embeddings = mod.makeEmbeddings(config)
-    } catch {
-      const d = pick('openai')
-      embeddings = d.makeEmbeddings(config)
-    }
+    // Last resort - try gemini anyway
+    effectiveEmbProvider = 'gemini'
+    console.log("[makeModels] WARNING: No embedding API key found, trying Gemini")
+  }
+
+  try {
+    const embMod = pick(effectiveEmbProvider)
+    embeddings = embMod.makeEmbeddings(config)
+    console.log(`[makeModels] Embeddings initialized: ${effectiveEmbProvider}`)
+  } catch (err: any) {
+    console.error(`[makeModels] Failed to create embeddings with ${effectiveEmbProvider}: ${err?.message}`)
+    // Ultimate fallback to Gemini
+    console.log("[makeModels] Falling back to Gemini embeddings")
+    embeddings = gemini.makeEmbeddings(config)
   }
 
   return { llm, embeddings }

@@ -58,9 +58,14 @@ export default function Landing() {
   return (
     <div className="flex flex-col min-h-screen w-full px-4 lg:pl-28 lg:pr-4">
       <div className="flex-1 flex flex-col justify-center max-w-4xl mx-auto my-20 md:my-4 w-full px-2">
-        <h1 className="text-2xl sm:text-3xl lg:text-4xl text-white font-semibold pl-3 border-l-2 border-sky-500 mb-8">
-          What&apos;d you like to learn today?
-        </h1>
+        <div className="mb-8">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl text-white font-bold mb-2">
+            DrLeeLM
+          </h1>
+          <p className="text-lg sm:text-xl text-stone-400 pl-0.5">
+            What would you like to learn today?
+          </p>
+        </div>
 
         <PromptBox
           value={prompt}

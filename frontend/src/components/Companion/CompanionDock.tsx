@@ -45,6 +45,41 @@ function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ")
 }
 
+// Helper to extract answer from potentially malformed response
+// Handles cases where the LLM returns raw JSON as the answer string
+function extractAnswer(payload: any): string {
+  if (!payload) return ""
+
+  let answer = payload.answer
+  if (typeof answer === "string" && answer.trim()) {
+    const trimmed = answer.trim()
+    // Check if answer itself is JSON (happens when LLM response parsing fails)
+    if (trimmed.startsWith("{") && trimmed.includes('"answer"')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (typeof parsed.answer === "string" && parsed.answer.trim()) {
+          return parsed.answer
+        }
+      } catch {
+        // Not valid JSON, try to extract answer field with regex
+        const match = trimmed.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/s)
+        if (match?.[1]) {
+          // Unescape JSON string
+          return match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+        }
+      }
+    }
+    return answer
+  }
+
+  // If the whole payload looks like it has nested structure
+  if (typeof payload === "object" && payload.companion?.answer) {
+    return extractAnswer(payload.companion)
+  }
+
+  return ""
+}
+
 function makeId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
@@ -117,7 +152,7 @@ export default function CompanionDock() {
           }
         }
       })
-      const assistantContent = payload?.answer || "I couldn't generate a response from the provided context."
+      const assistantContent = extractAnswer(payload) || "I couldn't generate a response from the provided context."
       const assistantMessage: CompanionMessage = {
         id: makeId(),
         role: "assistant",
@@ -223,8 +258,10 @@ export default function CompanionDock() {
                 )}
               >
                 {msg.role === "assistant" ? (
-                  <div className="space-y-3">
-                    <MarkdownView md={msg.content} />
+                  <div className="space-y-3 overflow-hidden">
+                    <div className="[&_.prose]:max-w-none [&_pre]:max-w-full [&_pre]:overflow-x-auto">
+                      <MarkdownView md={msg.content} />
+                    </div>
                     {msg.flashcards && msg.flashcards.length > 0 && (
                       <div className="rounded-xl border border-sky-500/40 bg-sky-500/5 px-3 py-2">
                         <div className="text-xs uppercase tracking-wide text-sky-300 mb-2">Flashcards</div>

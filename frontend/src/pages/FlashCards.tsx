@@ -51,7 +51,10 @@ export default function FlashCards() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
               </svg>
             </button>
-            <h1 className="text-2xl font-semibold text-white">My Learning Bag</h1>
+            <div>
+              <h1 className="text-2xl font-semibold text-white">My Learning Bag</h1>
+              <span className="text-xs text-stone-500">DrLeeLM</span>
+            </div>
           </div>
           <button
             onClick={clearAll}

@@ -98,6 +98,11 @@ export default function Chat() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [slowWarning, setSlowWarning] = useState(false);
   const [chatVerified, setChatVerified] = useState(false);
+  const [uploadPhase, setUploadPhase] = useState<"idle" | "uploading" | "processing" | "generating">("idle");
+  const [uploadedFiles, setUploadedFiles] = useState<{ filename: string; mime: string }[]>([]);
+  const [ragViewerOpen, setRagViewerOpen] = useState(false);
+  const [ragDocuments, setRagDocuments] = useState<{ index: number; contentLength: number; contentPreview: string; metadata: any }[]>([]);
+  const [ragLoading, setRagLoading] = useState(false);
   const { setDocument } = useCompanion();
   const elapsedSeconds = useElapsedTimer(awaitingAnswer);
 
@@ -232,7 +237,24 @@ export default function Chat() {
     ws.onmessage = (ev) => {
       try {
         const m = JSON.parse(ev.data);
-        if (m?.type === "answer") {
+        // Handle upload phase events
+        if (m?.type === "phase") {
+          if (m.value === "upload_start") {
+            setUploadPhase("uploading");
+            setUploadedFiles([]);
+          } else if (m.value === "upload_done") {
+            setUploadPhase("processing");
+            // Auto-clear after 3 seconds if no generating phase
+            setTimeout(() => {
+              setUploadPhase((prev) => prev === "processing" ? "idle" : prev);
+            }, 3000);
+          } else if (m.value === "generating") {
+            setUploadPhase("generating");
+          }
+        } else if (m?.type === "file") {
+          // Track each uploaded file
+          setUploadedFiles((prev) => [...prev, { filename: m.filename, mime: m.mime }]);
+        } else if (m?.type === "answer") {
           // Clear polling timeout - we got the answer via WebSocket
           if (answerTimeoutRef.current) {
             clearTimeout(answerTimeoutRef.current);
@@ -246,6 +268,8 @@ export default function Chat() {
           else if (norm.md) setTopic((t) => t || deriveTopicFromMarkdown(norm.md));
           setAwaitingAnswer(false);
           setChatError(null);
+          setUploadPhase("idle");
+          setUploadedFiles([]);
           setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), 0);
         } else if (m?.type === "done") {
           // Safety net: ensure timer stops when backend signals completion
@@ -537,6 +561,46 @@ export default function Chat() {
     return () => setDocument(null);
   }, [setDocument]);
 
+  const fetchRagDocuments = async () => {
+    if (!chatId) return;
+    setRagLoading(true);
+    try {
+      const res = await fetch(`${env.backend}/chats/${chatId}/rag`);
+      const data = await res.json();
+      if (data.ok) {
+        setRagDocuments(data.documents || []);
+      }
+    } catch (e) {
+      console.error("[RAG Viewer] Error fetching documents:", e);
+    } finally {
+      setRagLoading(false);
+    }
+  };
+
+  const openRagViewer = () => {
+    setRagViewerOpen(true);
+    fetchRagDocuments();
+  };
+
+  // Auto-refresh RAG documents when files are uploaded
+  useEffect(() => {
+    if (uploadPhase === "processing" && chatId) {
+      // Files just finished uploading - refresh RAG docs
+      setTimeout(() => {
+        fetchRagDocuments();
+      }, 500);
+    }
+  }, [uploadPhase, chatId]);
+
+  // Also fetch RAG docs when chatId changes
+  useEffect(() => {
+    if (chatId) {
+      fetchRagDocuments();
+    } else {
+      setRagDocuments([]);
+    }
+  }, [chatId]);
+
   const list = Array.isArray(messages) ? messages : [];
 
   return (
@@ -566,10 +630,57 @@ export default function Chat() {
                   </div>
                 );
               })}
+              {/* Upload Progress Indicator */}
+              {uploadPhase !== "idle" && (
+                <div className="w-full flex justify-start">
+                  <div className="w-full max-w-md rounded-xl p-4 border border-emerald-800/50 bg-emerald-950/30 animate-[fadeIn_200ms_ease-out]">
+                    <div className="flex items-center gap-3 text-emerald-400 mb-2">
+                      {uploadPhase === "uploading" && (
+                        <>
+                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          <span className="font-medium">Uploading files to RAG...</span>
+                        </>
+                      )}
+                      {uploadPhase === "processing" && (
+                        <>
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span className="font-medium">Files added to RAG successfully!</span>
+                        </>
+                      )}
+                      {uploadPhase === "generating" && (
+                        <>
+                          <svg className="w-5 h-5 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                          </svg>
+                          <span className="font-medium">Generating response with RAG context...</span>
+                        </>
+                      )}
+                    </div>
+                    {uploadedFiles.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {uploadedFiles.map((f, i) => (
+                          <div key={i} className="flex items-center gap-2 text-sm text-emerald-300/80">
+                            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span className="truncate">{f.filename}</span>
+                            <span className="text-emerald-500/60 text-xs">({f.mime})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               {(connecting || awaitingAnswer) && (
                 <div className="w-full flex justify-start flex-col gap-2">
                   <LoadingIndicator
-                    label={connecting ? "Connecting…" : "Thinking…"}
+                    label={connecting ? "Connecting…" : uploadPhase === "generating" ? "Analyzing with RAG…" : "Thinking…"}
                     elapsedSeconds={awaitingAnswer ? elapsedSeconds : undefined}
                   />
                   {slowWarning && (
@@ -630,6 +741,134 @@ export default function Chat() {
       <Composer disabled={busy} onSend={sendFollowup} />
       <BagFab count={bag.length} onClick={() => setBagOpen(true)} />
       <BagDrawer open={bagOpen} items={bag} onClose={() => setBagOpen(false)} onClear={clearBag} />
+
+      {/* RAG Viewer Button - ALWAYS visible */}
+      <button
+        onClick={openRagViewer}
+        className="fixed bottom-6 left-6 lg:left-32 z-40 px-5 py-3 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-semibold shadow-xl shadow-purple-900/40 transition-all flex items-center gap-3 border-2 border-purple-400/30"
+        title="View uploaded documents in RAG"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+        </svg>
+        <span>View RAG</span>
+        {ragDocuments.length > 0 && (
+          <span className="px-2 py-0.5 rounded-full bg-white/20 text-xs font-bold">
+            {ragDocuments.length}
+          </span>
+        )}
+      </button>
+
+      {/* RAG Viewer Modal */}
+      {ragViewerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setRagViewerOpen(false)}>
+          <div
+            className="w-full max-w-4xl max-h-[85vh] bg-stone-950 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-stone-900/50">
+              <div>
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+                  </svg>
+                  RAG Document Viewer
+                </h2>
+                <p className="text-sm text-stone-400 mt-1">
+                  {ragDocuments.length} document{ragDocuments.length !== 1 ? 's' : ''} in this chat's RAG context
+                </p>
+              </div>
+              <button
+                onClick={() => setRagViewerOpen(false)}
+                className="p-2 rounded-lg hover:bg-white/10 text-stone-400 hover:text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {!chatId ? (
+                <div className="flex flex-col items-center justify-center py-12 text-stone-400">
+                  <svg className="w-16 h-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  <p className="text-xl font-semibold text-white mb-2">No Active Chat</p>
+                  <p className="text-sm text-center max-w-sm">
+                    Start a new chat or select an existing one. When you upload files, they'll appear here in the RAG context.
+                  </p>
+                </div>
+              ) : ragLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="flex items-center gap-3 text-stone-400">
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Loading RAG documents...
+                  </div>
+                </div>
+              ) : ragDocuments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-stone-400">
+                  <svg className="w-16 h-16 mb-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-xl font-semibold text-white mb-2">No Documents Yet</p>
+                  <p className="text-sm text-center max-w-sm">
+                    Upload PDF, DOCX, or TXT files using the attachment button in the chat composer. They'll be processed and added to the RAG context.
+                  </p>
+                </div>
+              ) : (
+                ragDocuments.map((doc, idx) => (
+                  <div key={idx} className="rounded-xl border border-zinc-800 bg-stone-900/50 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-zinc-800 bg-stone-900/80 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="px-2 py-1 rounded-md bg-purple-500/20 text-purple-300 text-xs font-mono">
+                          #{doc.index + 1}
+                        </span>
+                        <span className="text-sm text-stone-300">
+                          {doc.contentLength.toLocaleString()} characters
+                        </span>
+                      </div>
+                      {doc.metadata && Object.keys(doc.metadata).length > 0 && (
+                        <div className="flex items-center gap-2 text-xs text-stone-500">
+                          {doc.metadata.source && <span>Source: {doc.metadata.source}</span>}
+                          {doc.metadata.loc?.pageNumber && <span>Page {doc.metadata.loc.pageNumber}</span>}
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      <pre className="text-sm text-stone-300 whitespace-pre-wrap font-mono leading-relaxed max-h-60 overflow-y-auto">
+                        {doc.contentPreview}
+                      </pre>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-zinc-800 bg-stone-900/50 flex items-center justify-between">
+              <p className="text-xs text-stone-500">
+                Chat ID: <code className="text-purple-400">{chatId}</code>
+              </p>
+              <button
+                onClick={fetchRagDocuments}
+                disabled={ragLoading}
+                className="px-4 py-2 rounded-lg bg-purple-600/80 hover:bg-purple-500 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                <svg className={`w-4 h-4 ${ragLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

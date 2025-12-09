@@ -330,14 +330,31 @@ export async function askWithContext(opts: AskWithContextOptions): Promise<AskPa
   const parsed = tryParse<any>(jsonStr)
   const parseTime = Date.now() - parseStart
 
-  const out: AskPayload =
-    parsed && typeof parsed === "object"
-      ? {
-        topic: typeof parsed.topic === "string" ? parsed.topic : topic,
-        answer: typeof parsed.answer === "string" ? parsed.answer : "",
-        flashcards: Array.isArray(parsed.flashcards) ? (parsed.flashcards as AskCard[]) : [],
-      }
-      : { topic, answer: draft, flashcards: [] }
+  // Helper to extract answer from raw text when JSON parsing fails
+  function extractAnswerFromRaw(raw: string): string {
+    // Try to find the answer field in the raw text
+    const match = raw.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/s)
+    if (match?.[1]) {
+      // Unescape JSON string
+      return match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+    }
+    // If no answer field found and it doesn't look like JSON, return as-is
+    if (!raw.startsWith("{")) return raw
+    return ""
+  }
+
+  let out: AskPayload
+  if (parsed && typeof parsed === "object") {
+    out = {
+      topic: typeof parsed.topic === "string" ? parsed.topic : topic,
+      answer: typeof parsed.answer === "string" ? parsed.answer : extractAnswerFromRaw(draft),
+      flashcards: Array.isArray(parsed.flashcards) ? (parsed.flashcards as AskCard[]) : [],
+    }
+  } else {
+    // Parsing failed entirely - try to extract answer from raw
+    const extractedAnswer = extractAnswerFromRaw(draft)
+    out = { topic, answer: extractedAnswer || draft, flashcards: [] }
+  }
 
   const cacheWriteStart = Date.now()
   writeCache(ck, out)
